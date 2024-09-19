@@ -10,4 +10,4 @@ An YouTube AD Blocker for Tampermonkey. Originated from [TheRealJoelmatic's Remo
    - [Tampermonkey for Opera/OperaGX](https://addons.opera.com/en-gb/extensions/details/tampermonkey-beta/)
 
 2. **Install the Script**:
-   [Click Here and Press Install](YTADBlocker.user.js?raw=True).
+   [Click Here and Press Install](YTADBlocker.user.js?raw=True)
