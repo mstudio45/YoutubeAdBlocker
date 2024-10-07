@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -264,14 +264,20 @@ display: none !important;
         currentUrl = window.location.href;
 
         let video = getVideoElement();
+        let isStream = false;
         const forceMuteMainVideo = async function() {
             if (!video) video = getVideoElement();
             if (video) {
                 video.volume = 0;
-                if (video.paused && customPlayerInserted == true) video.play();
+                video.muted = true;
+                if (isStream) {
+                    video.pause()
+                } else {
+                    if (video.paused && customPlayerInserted == true) video.play();
+                }
             }
 
-            setTimeout(forceMuteMainVideo, 5);
+            setTimeout(forceMuteMainVideo, 1);
         }
         forceMuteMainVideo();
 
@@ -343,6 +349,7 @@ display: none !important;
                 const iframeEl = document.querySelector("#customiframeplayer") || document.querySelector('#player > iframe')
                 if (!iframeEl && currentUrl === window.location.href) window.location.reload();
             }, 1500);
+            setTimeout(() => { isStream = document.body.innerHTML.indexOf("<yt-live-chat-app") !== 1; }, 15000); // wait for 15s for youtube to save the livestream in the history
         }, 1000)
     }
 
