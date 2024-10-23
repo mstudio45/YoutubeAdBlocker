@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -13,7 +13,7 @@
 
 (function() {
     /* Info:
-        This script originated from TheRealJoelmatic's Remove Adblock Thing: https://github.com/TheRealJoelmatic/RemoveAdblockThing
+        This script code originated from TheRealJoelmatic's Remove Adblock Thing: https://github.com/TheRealJoelmatic/RemoveAdblockThing
         Go give him a star on his repository!
 
         This AdBlocker keeps playing the video and ads in the background.
@@ -21,6 +21,11 @@
          - and also give them money for the ADs to the YouTuber :D
 
         Thank you for using my AdBlocker.
+
+        Changelogs:
+            v1.0.2:
+              - Fixed timestamps redirects.
+              - Fixed glitchy audio while watching YT streams.
     */
 
     const SETTINGS = {
@@ -64,7 +69,13 @@
 
     // Variables //
     let currentUrl = window.location.href;
+
+    let customPlayer = undefined;
     let customPlayerInserted = false;
+
+    let isVideoAdBlockerBeingProcessed = false;
+    let videoAdBlockerInterval = undefined;
+
     let hasIgnoredUpdate = false;
     let updateCheckInterval = undefined;
 
@@ -257,8 +268,37 @@ display: none !important;
         })
     }
 
-    let isVideoAdBlockerBeingProcessed = false;
-    let videoAdBlockerInterval = undefined;
+    function getYouTubeLinkData(urlString) {
+        const DATA = {
+            ID: "",
+            params: "?autoplay=1&modestbranding=1&rel=0",
+            timestamp: 0
+        }
+        if (!urlString) return DATA;
+
+        // Get video details //
+        const url = new URL(urlString);
+        const urlParams = url.searchParams;
+
+        // Get Video ID //
+        if (urlParams.has("v")) { DATA.ID = urlParams.get("v"); } else {
+            const paths = url.pathname.split("/");
+            const liveIndex = paths.indexOf("live")
+
+            if (liveIndex !== -1 && liveIndex + 1 < paths.length) DATA.ID = paths[liveIndex + 1];
+        }
+        if (DATA.ID == "") return DATA;
+
+        // Fetch data //
+        if (urlParams.has("list")) DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
+        if (urlParams.has("t") || urlParams.has("start")) {
+            DATA.timestamp = parseInt((urlParams.get("t") || urlParams.get("start")).replace("s", ""));
+            DATA.params = DATA.params + "&start=" + DATA.timestamp.toString();
+        }
+
+        return DATA;
+    }
+
     function videoAdBlocker() {
         if (!SETTINGS.adBlocker) return;
         currentUrl = window.location.href;
@@ -295,62 +335,75 @@ display: none !important;
             video = getVideoElement();
 
             // Get video details //
-            let VideoID = "";
-            let Arguments = "?autoplay=1&modestbranding=1&rel=0";
-            const url = new URL(window.location.href);
-            const urlParams = url.searchParams;
-
-            // Get Video ID //
-            if (urlParams.has("v")) { VideoID = urlParams.get("v"); } else {
-                const paths = url.pathname.split("/");
-                const liveIndex = paths.indexOf("live")
-
-                if (liveIndex !== -1 && liveIndex + 1 < paths.length) VideoID = paths[liveIndex + 1];
-            }
-            if (VideoID == "") { log("Failed to fetch video ID.", "error"); return; }
-
-            // Fetch data //
-            if (urlParams.has("list")) Arguments = Arguments + "&listType=playlist&list=" + urlParams.get("list");
-            if (urlParams.has("t") || urlParams.has("start")) Arguments = Arguments + "&start=" + (urlParams.get("t") || urlParams.get("start")).replace("s", "");
+            const VideoData = getYouTubeLinkData(window.location.href)
+            if (VideoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
 
             // Load //
             customPlayerInserted = true;
-            log("Video ID: " + VideoID)
+            log("Video ID: " + VideoData.ID)
 
             // Load //
-            const iframe = document.createElement("iframe");
+            if (customPlayer) customPlayer.remove();
+
+            customPlayer = document.createElement("iframe");
             const plr = (!video ? document.querySelector('#player') : video.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement) || document.querySelector('#player');
-            iframe.id = "customiframeplayer"
+            customPlayer.id = "customiframeplayer"
 
-            iframe.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoID + Arguments);
-            iframe.setAttribute('frameborder', '0');
-            iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
-            iframe.setAttribute('allowfullscreen', true); iframe.setAttribute('mozallowfullscreen', "mozallowfullscreen"); iframe.setAttribute('msallowfullscreen', "msallowfullscreen"); iframe.setAttribute('oallowfullscreen', "oallowfullscreen"); iframe.setAttribute('webkitallowfullscreen', "webkitallowfullscreen");
+            customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
+            customPlayer.setAttribute('frameborder', '0');
+            customPlayer.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
+            customPlayer.setAttribute('allowfullscreen', true); customPlayer.setAttribute('mozallowfullscreen', "mozallowfullscreen"); customPlayer.setAttribute('msallowfullscreen', "msallowfullscreen"); customPlayer.setAttribute('oallowfullscreen', "oallowfullscreen"); customPlayer.setAttribute('webkitallowfullscreen', "webkitallowfullscreen");
 
-            iframe.style.width = '100%'; iframe.style.height = '100%';
-            iframe.style.position = 'absolute'; iframe.style.top = '0'; iframe.style.left = '0';
-            iframe.style.zIndex = '1000';
-            iframe.style.pointerEvents = 'all';
+            customPlayer.style.width = '100%'; customPlayer.style.height = '100%';
+            customPlayer.style.position = 'absolute'; customPlayer.style.top = '0'; customPlayer.style.left = '0';
+            customPlayer.style.zIndex = '1000';
+            customPlayer.style.pointerEvents = 'all';
 
             // Get saved timestamp //
-            if (video && (Arguments.indexOf("&start=") === -1 && video.currentTime >= 10)) { // only works with 10 seconds or more
+            if (video && (VideoData.params.indexOf("&start=") === -1 && video.currentTime >= 10)) { // only works with 10 seconds or more
                 video.volume = 0;
-                Arguments = Arguments + "&start=" + video.currentTime.toString().split(".")[0];
-                iframe.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoID + Arguments);
+
+                VideoData.timestamp = parseInt(video.currentTime.toString().split(".")[0]);
+                VideoData.params = VideoData.params + "&start=" + VideoData.timestamp.toString();
+                customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
 
                 log("Set start time to the saved timestamp.")
             }
 
             log("Inserting IFrame...");
-            plr.appendChild(iframe);
+            plr.appendChild(customPlayer);
 
             log("Custom video player initialized!", "success")
             setTimeout(() => {
                 const iframeEl = document.querySelector("#customiframeplayer") || document.querySelector('#player > iframe')
                 if (!iframeEl && currentUrl === window.location.href) window.location.reload();
             }, 1500);
-            setTimeout(() => { isStream = document.body.innerHTML.indexOf("<yt-live-chat-app") !== 1; }, 15000); // wait for 15s for youtube to save the livestream in the history
+            setTimeout(() => {
+                if (document.body.innerHTML.indexOf("<yt-live-chat-app") !== 1) {
+                    document.querySelectorAll("iframe").forEach((iframeEl) => {
+                        if (iframeEl.src.indexOf("/live_chat?continuation=") !== -1) {
+                            isStream = true;
+                            log("Stream is paused to glitchy audio.", "warning", iframeEl);
+                        }
+                    })
+                }
+            }, 15000); // wait for 15s for youtube to save the livestream in the history
         }, 1000)
+    }
+
+    // Timestamp fixer //
+    function timestampFixer() {
+        document.addEventListener('click', function(event) {
+            const target = event.target;
+            if (!(target.tagName === 'A' && target.href)) return;
+            if (!customPlayer) return;
+
+            const VideoData = getYouTubeLinkData(target.href)
+            if (VideoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
+
+            log("Seeking to timestamp...", "", VideoData.timestamp);
+            customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
+        });
     }
 
     log("Starting script...", "success");
@@ -359,6 +412,7 @@ display: none !important;
         popupRemover();
         videoAdBlocker();
         updateChecker();
+        timestampFixer();
     }
 
     // Update loop //
