@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -17,15 +17,18 @@
         Go give him a star on his repository!
 
         This AdBlocker keeps playing the video and ads in the background.
-         - That means it will give watch time on all of the videos you watch (since it will sometimes finish the video in the background)
-         - and also give them money for the ADs to the YouTuber :D
+            - That means it will give watch time on all of the videos you watch (since it will sometimes finish the video in the background)
+            - and also give them money for the ADs to the YouTuber :D
 
         Thank you for using my AdBlocker.
 
         Changelogs:
+            v1.0.3:
+                - Fixed playlist loading
+                - Some other bug fixes
             v1.0.2:
-              - Fixed timestamps redirects.
-              - Fixed glitchy audio while watching YT streams.
+                - Fixed timestamps redirects.
+                - Fixed glitchy audio while watching YT streams.
     */
 
     const SETTINGS = {
@@ -272,7 +275,8 @@ display: none !important;
         const DATA = {
             ID: "",
             params: "?autoplay=1&modestbranding=1&rel=0",
-            timestamp: 0
+            timestamp: 0,
+            playlist: false,
         }
         if (!urlString) return DATA;
 
@@ -290,7 +294,10 @@ display: none !important;
         if (DATA.ID == "") return DATA;
 
         // Fetch data //
-        if (urlParams.has("list")) DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
+        if (urlParams.has("list")) {
+            DATA.playlist = true;
+            DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
+        }
         if (urlParams.has("t") || urlParams.has("start")) {
             DATA.timestamp = parseInt((urlParams.get("t") || urlParams.get("start")).replace("s", ""));
             DATA.params = DATA.params + "&start=" + DATA.timestamp.toString();
@@ -322,7 +329,7 @@ display: none !important;
         forceMuteMainVideo();
 
         if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
-        videoAdBlockerInterval = setInterval(() => {
+        videoAdBlockerInterval = setInterval(async () => {
             if (!window.location.href.includes("/watch?v=")) return;
             if (customPlayerInserted) return;
 
@@ -360,7 +367,7 @@ display: none !important;
             customPlayer.style.pointerEvents = 'all';
 
             // Get saved timestamp //
-            if (video && (VideoData.params.indexOf("&start=") === -1 && video.currentTime >= 10)) { // only works with 10 seconds or more
+            if (video && video.currentTime >= 10 && VideoData.params.indexOf("&start=") === -1) { // only works with 10 seconds or more
                 video.volume = 0;
 
                 VideoData.timestamp = parseInt(video.currentTime.toString().split(".")[0]);
@@ -370,14 +377,19 @@ display: none !important;
                 log("Set start time to the saved timestamp.")
             }
 
+
             log("Inserting IFrame...");
             plr.appendChild(customPlayer);
 
-            log("Custom video player initialized!", "success")
             setTimeout(() => {
                 const iframeEl = document.querySelector("#customiframeplayer") || document.querySelector('#player > iframe')
-                if (!iframeEl && currentUrl === window.location.href) window.location.reload();
-            }, 1500);
+                if (!iframeEl && currentUrl === window.location.href) {
+                    customPlayerInserted = false;
+                    return;
+                }
+                log("Custom video player initialized!", "success")
+            }, 3500);
+
             setTimeout(() => {
                 if (document.body.innerHTML.indexOf("<yt-live-chat-app") !== 1) {
                     document.querySelectorAll("iframe").forEach((iframeEl) => {
