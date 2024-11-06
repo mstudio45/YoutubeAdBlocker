@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -329,7 +329,7 @@ display: none !important;
         forceMuteMainVideo();
 
         if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
-        videoAdBlockerInterval = setInterval(async () => {
+        videoAdBlockerInterval = setInterval(() => {
             if (!window.location.href.includes("/watch?v=")) return;
             if (customPlayerInserted) return;
 
