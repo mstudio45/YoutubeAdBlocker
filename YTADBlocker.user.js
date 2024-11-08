@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -23,9 +23,8 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
-            v1.0.5:
+            v1.0.6:
                 - Some small improvement
-            v1.0.4:
                 - Fixed playlist loading
                 - Some other bug fixes
     */
@@ -440,6 +439,7 @@ display: none !important;
         videoAdBlocker();
         updateChecker();
         timestampFixer();
+        runDataInterval();
     }
 
     // Update loop //
