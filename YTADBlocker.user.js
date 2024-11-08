@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.0.5
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -17,18 +17,17 @@
         Go give him a star on his repository!
 
         This AdBlocker keeps playing the video and ads in the background.
-            - That means it will give watch time on all of the videos you watch (since it will sometimes finish the video in the background)
+            - That means it will save the videos you watch into your history (sometimes the video ended or is 2-3 minutes late due to ADs)
             - and also give them money for the ADs to the YouTuber :D
 
         Thank you for using my AdBlocker.
 
         Changelogs:
-            v1.0.3:
+            v1.0.5:
+                - Some small improvement
+            v1.0.4:
                 - Fixed playlist loading
                 - Some other bug fixes
-            v1.0.2:
-                - Fixed timestamps redirects.
-                - Fixed glitchy audio while watching YT streams.
     */
 
     const SETTINGS = {
@@ -73,14 +72,18 @@
     // Variables //
     let currentUrl = window.location.href;
 
+    let isStream = false;
+    let isVideoAdBlockerBeingProcessed = false;
+
+    let hasIgnoredUpdate = false;
+
     let customPlayer = undefined;
     let customPlayerInserted = false;
 
-    let isVideoAdBlockerBeingProcessed = false;
-    let videoAdBlockerInterval = undefined;
-
-    let hasIgnoredUpdate = false;
     let updateCheckInterval = undefined;
+    let videoAdBlockerInterval = undefined;
+    let mainVideoMuteInterval = undefined;
+    let dataInterval = undefined;
 
     // Global Functions //
     function getVideoElement() { return document.querySelector("video"); }
@@ -298,6 +301,7 @@ display: none !important;
             DATA.playlist = true;
             DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
         }
+
         if (urlParams.has("t") || urlParams.has("start")) {
             DATA.timestamp = parseInt((urlParams.get("t") || urlParams.get("start")).replace("s", ""));
             DATA.params = DATA.params + "&start=" + DATA.timestamp.toString();
@@ -306,28 +310,50 @@ display: none !important;
         return DATA;
     }
 
-    function videoAdBlocker() {
-        if (!SETTINGS.adBlocker) return;
-        currentUrl = window.location.href;
+    function runDataInterval() {
+        if (dataInterval) clearInterval(dataInterval);
+        dataInterval = setInterval(() => {
+            if (document.body.innerHTML.indexOf("<yt-live-chat-app") !== 1) {
+                document.querySelectorAll("iframe").forEach((iframeEl) => {
+                    if (iframeEl.src.indexOf("/live_chat?continuation=") !== -1) {
+                        isStream = true;
+                        log("Stream is paused to glitchy audio.", "warning", iframeEl);
+                    } else { isStream = false; }
+                })
+            } else { isStream = false; }
+        }, 5000);
+    }
 
+    function muteMainVideo() {
         let video = getVideoElement();
-        let isStream = false;
-        const forceMuteMainVideo = async function() {
-            if (!video) video = getVideoElement();
+
+        if (mainVideoMuteInterval) clearInterval(mainVideoMuteInterval);
+        mainVideoMuteInterval = setInterval(() => {
+            if (!window.location.href.includes("/watch?v=")) return;
+
             if (video) {
                 video.volume = 0;
                 video.muted = true;
+
                 if (isStream) {
                     video.pause()
                 } else {
-                    if (video.paused && customPlayerInserted == true) video.play();
+                    if (video.paused && customPlayerInserted == true) {
+                        video.play();
+                    }
                 }
+            } else {
+                video = getVideoElement();
             }
+        }, 1);
+    }
 
-            setTimeout(forceMuteMainVideo, 1);
-        }
-        forceMuteMainVideo();
+    function videoAdBlocker() {
+        if (!SETTINGS.adBlocker) return;
+        currentUrl = window.location.href;
+        let video = getVideoElement();
 
+        muteMainVideo();
         if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
         videoAdBlockerInterval = setInterval(() => {
             if (!window.location.href.includes("/watch?v=")) return;
@@ -389,17 +415,6 @@ display: none !important;
                 }
                 log("Custom video player initialized!", "success")
             }, 3500);
-
-            setTimeout(() => {
-                if (document.body.innerHTML.indexOf("<yt-live-chat-app") !== 1) {
-                    document.querySelectorAll("iframe").forEach((iframeEl) => {
-                        if (iframeEl.src.indexOf("/live_chat?continuation=") !== -1) {
-                            isStream = true;
-                            log("Stream is paused to glitchy audio.", "warning", iframeEl);
-                        }
-                    })
-                }
-            }, 15000); // wait for 15s for youtube to save the livestream in the history
         }, 1000)
     }
 
