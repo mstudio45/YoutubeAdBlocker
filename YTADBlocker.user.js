@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.6
+// @version      1.0.7
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
+// @match        http://www.youtube.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=youtube.com
 // @updateURL    https://github.com/mstudio45/YoutubeAdBlocker/raw/main/YTADBlocker.user.js
 // @downloadURL  https://github.com/mstudio45/YoutubeAdBlocker/raw/main/YTADBlocker.user.js
@@ -137,6 +138,10 @@
         updateCheckInterval = setInterval(checkVersion, 120_000) // 120 seconds for update checks.
     }
 
+    function shortsCheck() {
+        return window.location.href.includes("/shorts/")
+    }
+
     // Popup Remover //
     let isPopupBeingProcessed = false;
     let popupRemoverInterval;
@@ -228,6 +233,7 @@ ytd-ad-slot-renderer,
 ytd-in-feed-ad-layout-renderer,
 ytd-banner-promo-renderer-background
 statement-banner-style-type-compact,
+ytd-engagement-panel-section-list-renderer,
 .ytd-video-masthead-ad-v3-renderer,
 div#root.style-scope.ytd-display-ad-renderer.yt-simple-endpoint,
 div#sparkles-container.style-scope.ytd-promoted-sparkles-web-renderer,
@@ -263,6 +269,8 @@ display: none !important;
 
     // Video Ad Blocker //
     function clearAllPlayers(ourOnly) {
+        if (shortsCheck()) ourOnly = true;
+
         const popups = [document.querySelectorAll("#customiframeplayer"), ourOnly == true ? [] : document.querySelectorAll("video")]
         popups.forEach((elements) => {
             try {
@@ -298,7 +306,7 @@ display: none !important;
         // Fetch data //
         if (urlParams.has("list")) {
             DATA.playlist = true;
-            DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
+            //DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
         }
 
         if (urlParams.has("t") || urlParams.has("start")) {
@@ -323,26 +331,32 @@ display: none !important;
         }, 5000);
     }
 
+    function isVideoPage() { return window.location.href.includes("/watch?v=") || window.location.href.includes("/clip"); }
+
     function muteMainVideo() {
         let video = getVideoElement();
 
+        const muteBtn = document.querySelector(".ytp-mute-button")
+        if (muteBtn) muteBtn.click()
+
         if (mainVideoMuteInterval) clearInterval(mainVideoMuteInterval);
         mainVideoMuteInterval = setInterval(() => {
-            if (!window.location.href.includes("/watch?v=")) return;
+            if (shortsCheck() || !isVideoPage()) return;
 
-            if (video) {
-                video.volume = 0;
-                video.muted = true;
-
-                if (isStream) {
-                    video.pause()
-                } else {
-                    if (video.paused && customPlayerInserted == true) {
-                        video.play();
-                    }
-                }
-            } else {
+            if (!video) {
                 video = getVideoElement();
+                return;
+            }
+
+            video.volume = 0;
+            video.muted = true;
+
+            if (isStream) {
+                video.pause()
+            } else {
+                if (video.paused && customPlayerInserted == true) {
+                    video.play();
+                }
             }
         }, 1);
     }
@@ -355,7 +369,8 @@ display: none !important;
         muteMainVideo();
         if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
         videoAdBlockerInterval = setInterval(() => {
-            if (!window.location.href.includes("/watch?v=")) return;
+            console.log(isVideoPage())
+            if (shortsCheck() || !isVideoPage()) return;
             if (customPlayerInserted) return;
 
             // Reset players //
@@ -419,10 +434,13 @@ display: none !important;
 
     // Timestamp fixer //
     function timestampFixer() {
+        if (shortsCheck()) return;
+
         document.addEventListener('click', function(event) {
             const target = event.target;
             if (!(target.tagName === 'A' && target.href)) return;
             if (!customPlayer) return;
+            if (!target.href.includes("/watch?v=")) return;
 
             const VideoData = getYouTubeLinkData(target.href)
             if (VideoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
@@ -433,7 +451,7 @@ display: none !important;
     }
 
     log("Starting script...", "success");
-    if (!window.location.href.includes("/shorts/")) {
+    if (!shortsCheck()) {
         removePageAds();
         popupRemover();
         videoAdBlocker();
@@ -444,7 +462,7 @@ display: none !important;
 
     // Update loop //
     setInterval(() => {
-        if (window.location.href !== currentUrl && !window.location.href.includes("/shorts/")) {
+        if (window.location.href !== currentUrl) {
             log("________________________")
             currentUrl = window.location.href;
             customPlayerInserted = false;
