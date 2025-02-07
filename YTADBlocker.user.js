@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.7
+// @version      1.0.8
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -337,7 +337,9 @@ display: none !important;
         let video = getVideoElement();
 
         const muteBtn = document.querySelector(".ytp-mute-button")
-        if (muteBtn) muteBtn.click()
+        if (muteBtn) {
+            if (muteBtn.firstElementChild.childNodes.length > 2) muteBtn.click()
+        }
 
         if (mainVideoMuteInterval) clearInterval(mainVideoMuteInterval);
         mainVideoMuteInterval = setInterval(() => {
