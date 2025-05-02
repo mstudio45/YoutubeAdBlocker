@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.8
+// @version      1.0.9
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -11,6 +11,7 @@
 // @downloadURL  https://github.com/mstudio45/YoutubeAdBlocker/raw/main/YTADBlocker.user.js
 // @grant        none
 // ==/UserScript==
+
 
 (function() {
     /* Info:
@@ -84,6 +85,8 @@
     let videoAdBlockerInterval = undefined;
     let mainVideoMuteInterval = undefined;
     let dataInterval = undefined;
+
+    let plr;
 
     // Global Functions //
     function getVideoElement() { return document.querySelector("video"); }
@@ -353,8 +356,8 @@ display: none !important;
             video.volume = 0;
             video.muted = true;
 
-            if (isStream) {
-                video.pause()
+            if (isStream || paused) {
+                video.pause();
             } else {
                 if (video.paused && customPlayerInserted == true) {
                     video.play();
@@ -371,7 +374,6 @@ display: none !important;
         muteMainVideo();
         if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
         videoAdBlockerInterval = setInterval(() => {
-            console.log(isVideoPage())
             if (shortsCheck() || !isVideoPage()) return;
             if (customPlayerInserted) return;
 
@@ -395,7 +397,7 @@ display: none !important;
             if (customPlayer) customPlayer.remove();
 
             customPlayer = document.createElement("iframe");
-            const plr = (!video ? document.querySelector('#player') : video.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement) || document.querySelector('#player');
+            plr = (!video ? document.querySelector('#player') : video.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement) || document.querySelector('#player');
             customPlayer.id = "customiframeplayer"
 
             customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
@@ -404,7 +406,9 @@ display: none !important;
             customPlayer.setAttribute('allowfullscreen', true); customPlayer.setAttribute('mozallowfullscreen', "mozallowfullscreen"); customPlayer.setAttribute('msallowfullscreen', "msallowfullscreen"); customPlayer.setAttribute('oallowfullscreen', "oallowfullscreen"); customPlayer.setAttribute('webkitallowfullscreen', "webkitallowfullscreen");
 
             customPlayer.style.width = '100%'; customPlayer.style.height = '100%';
-            customPlayer.style.position = 'absolute'; customPlayer.style.top = '0'; customPlayer.style.left = '0';
+            customPlayer.style.position = 'absolute';
+            customPlayer.style.top = '0';
+            customPlayer.style.left = '0';
             customPlayer.style.zIndex = '1000';
             customPlayer.style.pointerEvents = 'all';
 
@@ -423,6 +427,8 @@ display: none !important;
             log("Inserting IFrame...");
             plr.appendChild(customPlayer);
 
+            // window.focus()
+
             setTimeout(() => {
                 const iframeEl = document.querySelector("#customiframeplayer") || document.querySelector('#player > iframe')
                 if (!iframeEl && currentUrl === window.location.href) {
@@ -431,7 +437,7 @@ display: none !important;
                 }
                 log("Custom video player initialized!", "success")
             }, 3500);
-        }, 1000)
+        }, 1000);
     }
 
     // Timestamp fixer //
