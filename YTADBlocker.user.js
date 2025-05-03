@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0.9
+// @version      1.1.0
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -356,7 +356,7 @@ display: none !important;
             video.volume = 0;
             video.muted = true;
 
-            if (isStream || paused) {
+            if (isStream) {
                 video.pause();
             } else {
                 if (video.paused && customPlayerInserted == true) {
