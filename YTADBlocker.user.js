@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -25,10 +25,8 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
-            v1.0.6:
-                - Some small improvement
-                - Fixed playlist loading
-                - Some other bug fixes
+            v1.1.1
+                - Fixed video player size being the wrong size when an AD is playing
     */
 
     const SETTINGS = {
@@ -375,7 +373,14 @@ display: none !important;
         if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
         videoAdBlockerInterval = setInterval(() => {
             if (shortsCheck() || !isVideoPage()) return;
-            if (customPlayerInserted) return;
+            if (customPlayerInserted) {
+                if (plr) {
+                    const vid = plr.getElementsByTagName("video")[0]
+                    if (vid) vid.style.display = "none";
+                }
+
+                return;
+            }
 
             // Reset players //
             log("Clearing duplicate players and muting main player...");
