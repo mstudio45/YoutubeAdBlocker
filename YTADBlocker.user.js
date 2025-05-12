@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.1.2
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -25,8 +25,8 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
-            v1.1.1
-                - Fixed video player size being the wrong size when an AD is playing
+            v1.1.2
+                - Fixed main two audio playbacks
     */
 
     const SETTINGS = {
@@ -83,8 +83,9 @@
     let videoAdBlockerInterval = undefined;
     let mainVideoMuteInterval = undefined;
     let dataInterval = undefined;
+    let muteMainVideoInterval = undefined;
 
-    let plr;
+    let plr = null;
 
     // Global Functions //
     function getVideoElement() { return document.querySelector("video"); }
@@ -270,6 +271,8 @@ display: none !important;
 
     // Video Ad Blocker //
     function clearAllPlayers(ourOnly) {
+        log("Clearing duplicate players...");
+
         if (shortsCheck()) ourOnly = true;
 
         const popups = [document.querySelectorAll("#customiframeplayer"), ourOnly == true ? [] : document.querySelectorAll("video")]
@@ -332,55 +335,33 @@ display: none !important;
         }, 5000);
     }
 
-    function isVideoPage() { return window.location.href.includes("/watch?v=") || window.location.href.includes("/clip"); }
-
-    function muteMainVideo() {
-        let video = getVideoElement();
-
-        const muteBtn = document.querySelector(".ytp-mute-button")
-        if (muteBtn) {
-            if (muteBtn.firstElementChild.childNodes.length > 2) muteBtn.click()
-        }
-
-        if (mainVideoMuteInterval) clearInterval(mainVideoMuteInterval);
-        mainVideoMuteInterval = setInterval(() => {
-            if (shortsCheck() || !isVideoPage()) return;
-
-            if (!video) {
-                video = getVideoElement();
-                return;
-            }
-
-            video.volume = 0;
-            video.muted = true;
-
-            if (isStream) {
-                video.pause();
-            } else {
-                if (video.paused && customPlayerInserted == true) {
-                    video.play();
-                }
-            }
-        }, 1);
-    }
+    function isVideoPage() { return window.location.href.includes("watch?v=") || window.location.href.includes("/clip"); }
 
     function videoAdBlocker() {
         if (!SETTINGS.adBlocker) return;
         currentUrl = window.location.href;
-        let video = getVideoElement();
 
-        muteMainVideo();
         if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
+        if (muteMainVideoInterval) clearInterval(muteMainVideoInterval);
+
+        muteMainVideoInterval = setInterval(() => {
+            if (!customPlayerInserted) return;
+            const vid = plr ? plr.getElementsByTagName("video")[0] : getVideoElement();
+            if (!vid) return;
+
+            vid.style.display = "none";
+            vid.volume = 0; vid.muted = true;
+
+            if (!isStream && vid.paused) {
+                vid.play();
+            } else {
+                vid.pause();
+            }
+        }, 1);
+
         videoAdBlockerInterval = setInterval(() => {
             if (shortsCheck() || !isVideoPage()) return;
-            if (customPlayerInserted) {
-                if (plr) {
-                    const vid = plr.getElementsByTagName("video")[0]
-                    if (vid) vid.style.display = "none";
-                }
-
-                return;
-            }
+            if (customPlayerInserted) return;
 
             // Reset players //
             log("Clearing duplicate players and muting main player...");
@@ -388,7 +369,8 @@ display: none !important;
             clearAllPlayers(true);
 
             // Get player //
-            video = getVideoElement();
+            let video = getVideoElement();
+            if (!video) return;
 
             // Get video details //
             const VideoData = getYouTubeLinkData(window.location.href)
@@ -440,6 +422,7 @@ display: none !important;
                     customPlayerInserted = false;
                     return;
                 }
+
                 log("Custom video player initialized!", "success")
             }, 3500);
         }, 1000);
