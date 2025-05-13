@@ -25,8 +25,8 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
-            v1.1.2
-                - Fixed main two audio playbacks
+            v1.1.3
+                - Improvements for hiding and muting the main video (hides and lowest quality)
     */
 
     const SETTINGS = {
@@ -86,6 +86,8 @@
     let muteMainVideoInterval = undefined;
 
     let plr = null;
+    let qualitySet = false;
+    const qualityList = ["Auto", "144p", "240p", "360p", "480p", "720p", "1080p", "1440p", "2160p"];
 
     // Global Functions //
     function getVideoElement() { return document.querySelector("video"); }
@@ -337,6 +339,33 @@ display: none !important;
 
     function isVideoPage() { return window.location.href.includes("watch?v=") || window.location.href.includes("/clip"); }
 
+    function setToLowestQuality() {
+        // Select lowest video quality //
+        log("Setting the main video to the lowest quality to save internet usage...");
+
+        const settingsButton = document.querySelector("button.ytp-settings-button");
+        if (!settingsButton) { log("Failed to fetch settings button.", "error"); return; }
+        settingsButton.click();
+
+        const menuItemLabels = Array.from(document.querySelectorAll(".ytp-menuitem-content"));
+        const menuBtns = menuItemLabels.filter(btn => qualityList.some(quality => btn.innerHTML.includes(quality)))
+        if (!menuBtns[0]) { log("Failed to fetch quality settings element.", "error"); return; }
+
+        const qualityButton = menuBtns[0].parentElement;
+        if (!qualityButton) { log("Failed to fetch quality settings button.", "error"); return; }
+        qualityButton.click();
+
+        const qualityMenu = document.querySelector(".ytp-quality-menu > .ytp-panel-menu");
+        const qualityOptions = Array.from(qualityMenu.querySelectorAll(".ytp-menuitem"));
+        const lowestQuality = qualityOptions.find(item => item.textContent.trim().includes("144p"));
+        if (!lowestQuality) { log("Failed to fetch the lowest quality button.", "error"); return; }
+
+        lowestQuality.click();
+        log("The main video quality is now set to 144p.", "success");
+
+        return true;
+    }
+
     function videoAdBlocker() {
         if (!SETTINGS.adBlocker) return;
         currentUrl = window.location.href;
@@ -344,24 +373,28 @@ display: none !important;
         if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
         if (muteMainVideoInterval) clearInterval(muteMainVideoInterval);
 
-        muteMainVideoInterval = setInterval(() => {
+        // Mute main video //
+        let vid = null;
+        const muteVideo = () => {
             if (!customPlayerInserted) return;
-            const vid = plr ? plr.getElementsByTagName("video")[0] : getVideoElement();
-            if (!vid) return;
+            if (!vid || !vid.src) { vid = getVideoElement(); return; }
 
-            vid.style.display = "none";
-            vid.volume = 0; vid.muted = true;
+            // set lowest quality //
+            if (qualitySet !== true) qualitySet = setToLowestQuality();
 
-            if (!isStream && vid.paused) {
-                vid.play();
-            } else {
-                vid.pause();
-            }
-        }, 1);
+            // hide video //
+            vid.style.display = "none"; vid.volume = 0; vid.muted = true;
 
+            // pause handler //
+            if (isStream) { vid.pause(); return; }
+            if (vid.paused) vid.play();
+        };
+        setTimeout(muteVideo, 1);
+        muteMainVideoInterval = setInterval(muteVideo, 500);
+
+        // Insert video //
         videoAdBlockerInterval = setInterval(() => {
-            if (shortsCheck() || !isVideoPage()) return;
-            if (customPlayerInserted) return;
+            if (shortsCheck() || !isVideoPage() || customPlayerInserted) return;
 
             // Reset players //
             log("Clearing duplicate players and muting main player...");
@@ -370,7 +403,7 @@ display: none !important;
 
             // Get player //
             let video = getVideoElement();
-            if (!video) return;
+            if (!video) { log("Failed to fetch the video element.", "error"); return; }
 
             // Get video details //
             const VideoData = getYouTubeLinkData(window.location.href)
@@ -384,7 +417,7 @@ display: none !important;
             if (customPlayer) customPlayer.remove();
 
             customPlayer = document.createElement("iframe");
-            plr = (!video ? document.querySelector('#player') : video.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement) || document.querySelector('#player');
+            plr = (!video ? document.querySelector("#player") : video.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement) || document.querySelector("#player");
             customPlayer.id = "customiframeplayer"
 
             customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
@@ -425,17 +458,16 @@ display: none !important;
 
                 log("Custom video player initialized!", "success")
             }, 3500);
-        }, 1000);
+        }, 1500);
     }
 
     // Timestamp fixer //
     function timestampFixer() {
-        if (shortsCheck()) return;
-
         document.addEventListener('click', function(event) {
+            if (!customPlayer) return;
+
             const target = event.target;
             if (!(target.tagName === 'A' && target.href)) return;
-            if (!customPlayer) return;
             if (!target.href.includes("/watch?v=")) return;
 
             const VideoData = getYouTubeLinkData(target.href)
@@ -447,14 +479,20 @@ display: none !important;
     }
 
     log("Starting script...", "success");
+
+    //window.onload = () => {
     if (!shortsCheck()) {
         removePageAds();
         popupRemover();
-        videoAdBlocker();
-        updateChecker();
-        timestampFixer();
-        runDataInterval();
+
+        timestampFixer(); // Comment timestamp fix
+        runDataInterval(); // Video Data
+        videoAdBlocker(); // Main AdBlock
     }
+    //}
+
+    updateChecker();
+    log("Script started!", "success");
 
     // Update loop //
     setInterval(() => {
@@ -462,12 +500,11 @@ display: none !important;
             log("________________________")
             currentUrl = window.location.href;
             customPlayerInserted = false;
+            qualitySet = false;
 
             removePageAds();
             popupRemover();
             clearAllPlayers();
         }
     }, 100);
-
-    log("Script started!", "success");
 })();
