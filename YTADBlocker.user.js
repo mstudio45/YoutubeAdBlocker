@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.1.2
+// @version      1.1.4
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -25,8 +25,8 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
-            v1.1.3
-                - Improvements for hiding and muting the main video (hides and lowest quality)
+            v1.1.4
+                - Fixed video not inserting on URL change while an ad is playing
     */
 
     const SETTINGS = {
@@ -403,7 +403,8 @@ display: none !important;
 
             // Get player //
             let video = getVideoElement();
-            if (!video) { log("Failed to fetch the video element.", "error"); return; }
+            plr = document.querySelector("#player");
+            if (!plr) { log("Failed to fetch the player container element.", "error"); return; }
 
             // Get video details //
             const VideoData = getYouTubeLinkData(window.location.href)
@@ -417,8 +418,7 @@ display: none !important;
             if (customPlayer) customPlayer.remove();
 
             customPlayer = document.createElement("iframe");
-            plr = (!video ? document.querySelector("#player") : video.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement.parentElement) || document.querySelector("#player");
-            customPlayer.id = "customiframeplayer"
+            customPlayer.id = "customiframeplayer";
 
             customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
             customPlayer.setAttribute('frameborder', '0');
