@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.1.4
+// @version      1.1.5
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -25,7 +25,8 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
-            v1.1.4
+            v1.1.5
+                - Fixed infinite loop with quality setter
                 - Fixed video not inserting on URL change while an ad is playing
     */
 
@@ -277,7 +278,7 @@ display: none !important;
 
         if (shortsCheck()) ourOnly = true;
 
-        const popups = [document.querySelectorAll("#customiframeplayer"), ourOnly == true ? [] : document.querySelectorAll("video")]
+        const popups = [document.querySelectorAll("#customiframeplayer"), ourOnly === true ? [] : document.querySelectorAll("video")]
         popups.forEach((elements) => {
             try {
                 if (elements && elements.length > 0) {
@@ -357,7 +358,7 @@ display: none !important;
 
         const qualityMenu = document.querySelector(".ytp-quality-menu > .ytp-panel-menu");
         const qualityOptions = Array.from(qualityMenu.querySelectorAll(".ytp-menuitem"));
-        const lowestQuality = qualityOptions.find(item => item.textContent.trim().includes("144p"));
+        const lowestQuality = qualityOptions.find(item => item.textContent.trim().includes("144p") || item.textContent.trim().includes("240p") || item.textContent.trim().includes("360p"));
         if (!lowestQuality) { log("Failed to fetch the lowest quality button.", "error"); return; }
 
         lowestQuality.click();
