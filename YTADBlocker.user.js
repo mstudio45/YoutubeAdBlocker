@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.1.5
+// @version      1.1.7
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -23,11 +23,6 @@
             - and also give them money for the ADs to the YouTuber :D
 
         Thank you for using my AdBlocker.
-
-        Changelogs:
-            v1.1.5
-                - Fixed infinite loop with quality setter
-                - Fixed video not inserting on URL change while an ad is playing
     */
 
     const SETTINGS = {
@@ -38,9 +33,7 @@
         // YouTube //
         adBlocker: true,
         removePageAds: true,
-        popUps: {
-            adBlock: true
-        }
+        removePopUps: true
     }
 
     function log(log, level, ...args) {
@@ -69,51 +62,56 @@
 
     if (window.ytadblock) return; window.ytadblock = true;
 
-    // Variables //
-    let currentUrl = window.location.href;
-
-    let isStream = false;
-    let isVideoAdBlockerBeingProcessed = false;
-
-    let hasIgnoredUpdate = false;
-
-    let customPlayer = undefined;
-    let customPlayerInserted = false;
-
-    let updateCheckInterval = undefined;
-    let videoAdBlockerInterval = undefined;
-    let mainVideoMuteInterval = undefined;
-    let dataInterval = undefined;
-    let muteMainVideoInterval = undefined;
-
-    let plr = null;
-    let qualitySet = false;
+    // Static Variables //
     const qualityList = ["Auto", "144p", "240p", "360p", "480p", "720p", "1080p", "1440p", "2160p"];
 
-    // Global Functions //
-    function getVideoElement() { return document.querySelector("video"); }
+    // Update Variables //
+    let hasUpdated = false;
+    let hasIgnoredUpdate = false;
+    let updateInterval = undefined;
 
-    // Updates //
-    let updateAlert; updateAlert = function(scriptUrl, githubVersion, currentVersion) {
-        //if (window.top !== window.self) { setTimeout(function() { updateAlert(scriptUrl, githubVersion, currentVersion); }, 1000); return; }
+    // Main Variables //
+    let currentUrl = window.location.href;
+    let videoElement;
+    let playerElement;
 
+    // Video Variables //
+    let isStream = false;
+    let qualitySet = false;
+
+    let customPlayer = undefined;
+    let customVideoInserted = false;
+
+    let adBlockInterval = undefined;
+    let muteInterval = undefined;
+
+    // Intervals //
+    let dataInterval = undefined;
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    function updateAlert(scriptUrl, githubVersion, currentVersion) {
         const result = window.confirm("Remove Adblock Thing: A new version is available! Do you want to update the script? Latest: " + githubVersion + " | Currently installed: " + currentVersion);
         if (result) { window.open(scriptUrl, "_blank"); } else {
             hasIgnoredUpdate = true;
-            clearInterval(updateCheckInterval);
+            clearInterval(updateInterval);
         }
     }
+
     function updateChecker() {
-        if (!SETTINGS.updateCheck) return;
-        if (hasIgnoredUpdate) return;
+        if (!SETTINGS.updateCheck || hasIgnoredUpdate) return;
 
         const scriptUrl = "https://raw.githubusercontent.com/mstudio45/YoutubeAdBlocker/main/YTADBlocker.user.js";
-        if (updateCheckInterval) clearInterval(updateCheckInterval);
+        if (updateInterval) clearInterval(updateInterval);
 
         const checkVersion = () => {
             log("Checking version...")
             fetch(scriptUrl + "?random" + (Math.random() + 1).toString(36).substring(7) + "=" + (Math.random() + 1).toString(36).substring(7)).then(response => response.text()).then(data => {
-                if (hasIgnoredUpdate) { clearInterval(updateCheckInterval); return; }
+                if (hasIgnoredUpdate) { clearInterval(updateInterval); return; }
 
                 log("Extracting latest version...")
                 // Extract version from the script on GitHub //
@@ -140,87 +138,135 @@
         }
 
         checkVersion();
-        updateCheckInterval = setInterval(checkVersion, 120_000) // 120 seconds for update checks.
+        updateInterval = setInterval(checkVersion, 120_000) // 120 seconds for update checks.
     }
 
-    function shortsCheck() {
-        return window.location.href.includes("/shorts/")
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    // Functions //
+    function clearAllPlayers(fakeVideoOnly) {
+        if (isShortsPage()) fakeVideoOnly = true;
+
+        const popups = [document.querySelectorAll("#customiframeplayer"), fakeVideoOnly === true ? [] : document.querySelectorAll("video")]
+        popups.forEach((elements) => {
+            try {
+                if (elements && elements.length > 0) {
+                    elements.forEach((element) => element.remove());
+                }
+            } catch (e) { log("Error:", "error", elements, e) }
+        })
+    }
+    function getYouTubeLinkData(urlString) {
+        const DATA = {
+            ID: "",
+            params: "?autoplay=1&modestbranding=1&rel=0",
+            timestamp: 0,
+            playlist: false,
+        }
+        if (!urlString) return DATA;
+
+        // Get video details //
+        const url = new URL(urlString);
+        const urlParams = url.searchParams;
+
+        // Get Video ID //
+        if (urlParams.has("v")) { DATA.ID = urlParams.get("v"); } else {
+            const paths = url.pathname.split("/");
+            const liveIndex = paths.indexOf("live")
+
+            if (liveIndex !== -1 && liveIndex + 1 < paths.length) DATA.ID = paths[liveIndex + 1];
+        }
+        if (DATA.ID == "") return DATA;
+
+        // Fetch data //
+        if (urlParams.has("list")) {
+            DATA.playlist = true;
+            // DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
+        }
+
+        if (urlParams.has("t") || urlParams.has("start")) {
+            DATA.timestamp = parseInt((urlParams.get("t") || urlParams.get("start")).replace("s", ""));
+            DATA.params = DATA.params + "&start=" + DATA.timestamp.toString();
+        }
+
+        return DATA;
     }
 
-    // Popup Remover //
+    function isShortsPage() { return window.location.href.includes("/shorts/") }
+    function isVideoPage() { return window.location.href.includes("watch?v=") || window.location.href.includes("/clip"); }
+    function isAdPlaying() {
+        const isAdText = document.querySelector(".ytp-ad-text");
+        const skipAdBtn = document.querySelector(".ytp-ad-skip-button");
+        if (isAdText || skipAdBtn) return true;
+        return false;
+    }
+
+    // PopUp Remover //
+    let popUpInterval = undefined;
     let isPopupBeingProcessed = false;
-    let popupRemoverInterval;
 
-    function removeFakeErrorScreen() {
-        // "Ad blockers violate YouTube's Terms of Service" safari modal
+    function removeFakeErrorScreen() { // "Ad blockers violate YouTube's Terms of Service" safari modal
         const errorScreen = document.querySelector("#error-screen");
         if (errorScreen) errorScreen.remove();
     }
 
     function popupRemover() {
-        if (popupRemoverInterval) clearInterval(popupRemoverInterval);
-        popupRemoverInterval = setInterval(() => {
-            if (isPopupBeingProcessed) return;
+        if (popUpInterval) clearInterval(popUpInterval);
+        popUpInterval = setInterval(() => {
+            if (SETTINGS.removePopUps !== true || isPopupBeingProcessed) return;
             isPopupBeingProcessed = true;
 
-            // Ad Block popup //
-            if (SETTINGS.popUps.adBlock == true) {
-                const bodyStyle = document.body.style;
-                bodyStyle.setProperty('overflow-y', 'auto', 'important');
+            // Ad Block PopUp //
+            const bodyStyle = document.body.style;
+            bodyStyle.setProperty('overflow-y', 'auto', 'important');
 
-                const modalOverlay = document.querySelector("tp-yt-iron-overlay-backdrop");
-                if (modalOverlay) {
-                    log("Removing modal...");
-                    modalOverlay.removeAttribute("opened");
-                    modalOverlay.remove();
-                    log("Modal has been removed.", "success");
-                }
-
-                const popup = document.querySelector(".style-scope ytd-enforcement-message-view-model");
-                if (popup) {
-                    log("Removing popup...");
-                    const video = getVideoElement();
-                    const popupButton = document.getElementById("dismiss-button");
-
-                    if (popupButton) popupButton.click();
-                    popup.remove();
-
-                    // Unpause video
-                    video.play();
-                    setTimeout(() => { if (video.paused) video.play(); }, 1000);
-
-                    log("Popup has been removed.", "success");
-                }
-
-                const popupAd = document.querySelector("style-scope, .yt-about-this-ad-renderer");
-                if (popupAd) {
-                    log("Removing popup ad center...");
-                    popupAd.parentElement.parentElement.remove();
-                    log("Popup ad center has been removed.", "success");
-                }
-
-                removeFakeErrorScreen();
+            // Error Screen //
+            const errorScreen = document.querySelector("#error-screen");
+            if (errorScreen) {
+                errorScreen.remove();
+                log("Error modal removed.", "success");
             }
 
-            // Premium bitrate popup //
-            /*if (SETTINGS.popUps.premiumBitrate == true) {
-                const popups = [document.querySelectorAll("style-scope, .ytd-popup-container"), document.querySelectorAll("style-scope, .ytd-menu-popup-renderer")]
-                popups.forEach((elements) => {
-                    try {
-                        if (elements && elements.length > 0) {
-                            elements.forEach((element) => element.remove());
-                        }
-                    } catch (e) { log("Error:", "error", elements, e) }
-                })
-            }*/
+            // Modal //
+            const modalOverlay = document.querySelector("tp-yt-iron-overlay-backdrop");
+            if (modalOverlay) {
+                modalOverlay.removeAttribute("opened");
+                modalOverlay.remove();
+                log("Modal has been removed.", "success");
+            }
+
+            // ToS PopUp //
+            const popup = document.querySelector(".style-scope ytd-enforcement-message-view-model");
+            if (popup && videoElement) {
+                const popupButton = document.getElementById("dismiss-button");
+
+                if (popupButton) popupButton.click();
+                popup.remove();
+
+                // Unpause video
+                videoElement.play();
+                setTimeout(() => { if (videoElement.paused) videoElement.play(); }, 1000);
+
+                log("Popup has been removed.", "success");
+            }
+
+            // PopUp Ads //
+            const popupAd = document.querySelector("style-scope, .yt-about-this-ad-renderer");
+            if (popupAd) {
+                popupAd.parentElement.parentElement.remove();
+                log("Popup ad center has been removed.", "success");
+            }
 
             isPopupBeingProcessed = false;
         }, 1000);
     }
 
-    // Page ADs remover //
+    // Page AD Remover //
     function removePageAds() {
-        if (!SETTINGS.removePageAds) return;
+        if (SETTINGS.removePageAds !== true) return;
 
         if (document.querySelector("#remadover") == undefined) {
             const style = document.createElement('style');
@@ -249,7 +295,7 @@ ytm-promoted-sparkles-web-renderer,
 masthead-ad,
 tp-yt-iron-overlay-backdrop,
 #masthead-ad {
-display: none !important;
+    display: none !important;
 }`;
             document.head.appendChild(style);
         }
@@ -272,78 +318,22 @@ display: none !important;
         log("Removed page ads.", "success");
     }
 
-    // Video Ad Blocker //
-    function clearAllPlayers(ourOnly) {
-        log("Clearing duplicate players...");
-
-        if (shortsCheck()) ourOnly = true;
-
-        const popups = [document.querySelectorAll("#customiframeplayer"), ourOnly === true ? [] : document.querySelectorAll("video")]
-        popups.forEach((elements) => {
-            try {
-                if (elements && elements.length > 0) {
-                    elements.forEach((element) => element.remove());
-                }
-            } catch (e) { log("Error:", "error", elements, e) }
-        })
-    }
-
-    function getYouTubeLinkData(urlString) {
-        const DATA = {
-            ID: "",
-            params: "?autoplay=1&modestbranding=1&rel=0",
-            timestamp: 0,
-            playlist: false,
-        }
-        if (!urlString) return DATA;
-
-        // Get video details //
-        const url = new URL(urlString);
-        const urlParams = url.searchParams;
-
-        // Get Video ID //
-        if (urlParams.has("v")) { DATA.ID = urlParams.get("v"); } else {
-            const paths = url.pathname.split("/");
-            const liveIndex = paths.indexOf("live")
-
-            if (liveIndex !== -1 && liveIndex + 1 < paths.length) DATA.ID = paths[liveIndex + 1];
-        }
-        if (DATA.ID == "") return DATA;
-
-        // Fetch data //
-        if (urlParams.has("list")) {
-            DATA.playlist = true;
-            //DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
-        }
-
-        if (urlParams.has("t") || urlParams.has("start")) {
-            DATA.timestamp = parseInt((urlParams.get("t") || urlParams.get("start")).replace("s", ""));
-            DATA.params = DATA.params + "&start=" + DATA.timestamp.toString();
-        }
-
-        return DATA;
-    }
-
+    // Video Ad Block //
     function runDataInterval() {
         if (dataInterval) clearInterval(dataInterval);
         dataInterval = setInterval(() => {
-            if (document.body.innerHTML.indexOf("<yt-live-chat-app") !== 1) {
-                document.querySelectorAll("iframe").forEach((iframeEl) => {
-                    if (iframeEl.src.indexOf("/live_chat?continuation=") !== -1) {
-                        isStream = true;
-                        log("Stream is paused to glitchy audio.", "warning", iframeEl);
-                    } else { isStream = false; }
-                })
-            } else { isStream = false; }
-        }, 5000);
+            if (!videoElement) videoElement = document.querySelector("video");
+            if (!playerElement) {
+                let tempPlayerElement = document.querySelector("#player");
+                if (tempPlayerElement.className.indexOf("skeleton") === -1) playerElement = tempPlayerElement;
+            }
+        }, 100);
     }
 
-    function isVideoPage() { return window.location.href.includes("watch?v=") || window.location.href.includes("/clip"); }
-
     function setToLowestQuality() {
-        // Select lowest video quality //
-        log("Setting the main video to the lowest quality to save internet usage...");
+        if (isAdPlaying()) return;
 
+        // Select lowest video quality //
         const settingsButton = document.querySelector("button.ytp-settings-button");
         if (!settingsButton) { log("Failed to fetch settings button.", "error"); return; }
         settingsButton.click();
@@ -358,73 +348,71 @@ display: none !important;
 
         const qualityMenu = document.querySelector(".ytp-quality-menu > .ytp-panel-menu");
         const qualityOptions = Array.from(qualityMenu.querySelectorAll(".ytp-menuitem"));
-        const lowestQuality = qualityOptions.find(item => item.textContent.trim().includes("144p") || item.textContent.trim().includes("240p") || item.textContent.trim().includes("360p"));
-        if (!lowestQuality) { log("Failed to fetch the lowest quality button.", "error"); return; }
+        const lowestQuality = qualityOptions.find(item => item.textContent.trim().includes("144p")) || qualityOptions.find(item => item.textContent.trim().includes("240p")) || qualityOptions.find(item => item.textContent.trim().includes("360p"));
+        if (!lowestQuality) return;
 
         lowestQuality.click();
-        log("The main video quality is now set to 144p.", "success");
+        log("The main video quality is now set to " + lowestQuality.textContent.trim() + ".", "success");
 
         return true;
     }
 
-    function videoAdBlocker() {
-        if (!SETTINGS.adBlocker) return;
-        currentUrl = window.location.href;
+    function muteMainVideo() {
+        if (SETTINGS.adBlocker !== true) return;
+        if (muteInterval) clearInterval(muteInterval);
 
-        if (videoAdBlockerInterval) clearInterval(videoAdBlockerInterval);
-        if (muteMainVideoInterval) clearInterval(muteMainVideoInterval);
-
-        // Mute main video //
-        let vid = null;
         const muteVideo = () => {
-            if (!customPlayerInserted) return;
-            if (!vid || !vid.src) { vid = getVideoElement(); return; }
+            if (!videoElement) return;
 
-            // set lowest quality //
+            // display //
+            videoElement.parentElement.style.display = "none";
+
+            // audio and time //
+            videoElement.volume = 0; videoElement.muted = true;
+            if (videoElement.paused) videoElement.play();
+
+            // quality //
             if (qualitySet !== true) qualitySet = setToLowestQuality();
-
-            // hide video //
-            vid.style.display = "none"; vid.volume = 0; vid.muted = true;
-
-            // pause handler //
-            if (isStream) { vid.pause(); return; }
-            if (vid.paused) vid.play();
         };
         setTimeout(muteVideo, 1);
-        muteMainVideoInterval = setInterval(muteVideo, 500);
+        muteInterval = setInterval(muteVideo, 500);
+    }
 
-        // Insert video //
-        videoAdBlockerInterval = setInterval(() => {
-            if (shortsCheck() || !isVideoPage() || customPlayerInserted) return;
+    function videoAdBlocker() {
+        if (SETTINGS.adBlocker !== true) return;
+        currentUrl = window.location.href;
+
+        muteMainVideo();
+        if (adBlockInterval) clearInterval(adBlockInterval);
+
+        adBlockInterval = setInterval(() => {
+            if (!isVideoPage() || isShortsPage() || customVideoInserted === true) return;
+            if (!videoElement || !playerElement) return;
 
             // Reset players //
             log("Clearing duplicate players and muting main player...");
-            removeFakeErrorScreen();
             clearAllPlayers(true);
 
-            // Get player //
-            let video = getVideoElement();
-            plr = document.querySelector("#player");
-            if (!plr) { log("Failed to fetch the player container element.", "error"); return; }
-
             // Get video details //
-            const VideoData = getYouTubeLinkData(window.location.href)
-            if (VideoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
+            const videoData = getYouTubeLinkData(window.location.href)
+            if (videoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
 
             // Load //
-            customPlayerInserted = true;
-            log("Video ID: " + VideoData.ID)
+            log("Video ID: " + videoData.ID);
+            customVideoInserted = true;
 
-            // Load //
             if (customPlayer) customPlayer.remove();
-
             customPlayer = document.createElement("iframe");
             customPlayer.id = "customiframeplayer";
 
-            customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
+            customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + videoData.ID + videoData.params);
             customPlayer.setAttribute('frameborder', '0');
             customPlayer.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
-            customPlayer.setAttribute('allowfullscreen', true); customPlayer.setAttribute('mozallowfullscreen', "mozallowfullscreen"); customPlayer.setAttribute('msallowfullscreen', "msallowfullscreen"); customPlayer.setAttribute('oallowfullscreen', "oallowfullscreen"); customPlayer.setAttribute('webkitallowfullscreen', "webkitallowfullscreen");
+            customPlayer.setAttribute('allowfullscreen', true);
+            customPlayer.setAttribute('mozallowfullscreen', "mozallowfullscreen");
+            customPlayer.setAttribute('msallowfullscreen', "msallowfullscreen");
+            customPlayer.setAttribute('oallowfullscreen', "oallowfullscreen");
+            customPlayer.setAttribute('webkitallowfullscreen', "webkitallowfullscreen");
 
             customPlayer.style.width = '100%'; customPlayer.style.height = '100%';
             customPlayer.style.position = 'absolute';
@@ -434,31 +422,18 @@ display: none !important;
             customPlayer.style.pointerEvents = 'all';
 
             // Get saved timestamp //
-            if (video && video.currentTime >= 10 && VideoData.params.indexOf("&start=") === -1) { // only works with 10 seconds or more
-                video.volume = 0;
+            if (videoElement && videoElement.currentTime >= 10 && videoData.params.indexOf("&start=") === -1) { // only works with 10 seconds or more
+                videoElement.volume = 0;
 
-                VideoData.timestamp = parseInt(video.currentTime.toString().split(".")[0]);
-                VideoData.params = VideoData.params + "&start=" + VideoData.timestamp.toString();
-                customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
+                videoData.timestamp = parseInt(videoElement.currentTime.toString().split(".")[0]);
+                videoData.params = videoData.params + "&start=" + videoData.timestamp.toString();
+                customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + videoData.ID + videoData.params);
 
                 log("Set start time to the saved timestamp.")
             }
 
-
             log("Inserting IFrame...");
-            plr.appendChild(customPlayer);
-
-            // window.focus()
-
-            setTimeout(() => {
-                const iframeEl = document.querySelector("#customiframeplayer") || document.querySelector('#player > iframe')
-                if (!iframeEl && currentUrl === window.location.href) {
-                    customPlayerInserted = false;
-                    return;
-                }
-
-                log("Custom video player initialized!", "success")
-            }, 3500);
+            playerElement.appendChild(customPlayer);
         }, 1500);
     }
 
@@ -481,16 +456,15 @@ display: none !important;
 
     log("Starting script...", "success");
 
-    //window.onload = () => {
-    if (!shortsCheck()) {
-        removePageAds();
-        popupRemover();
+    if (!isShortsPage()) {
+        runDataInterval(); // Video Data
+
+        setTimeout(popupRemover, 1);
+        setTimeout(removePageAds, 1);
 
         timestampFixer(); // Comment timestamp fix
-        runDataInterval(); // Video Data
         videoAdBlocker(); // Main AdBlock
     }
-    //}
 
     updateChecker();
     log("Script started!", "success");
@@ -500,12 +474,11 @@ display: none !important;
         if (window.location.href !== currentUrl) {
             log("________________________")
             currentUrl = window.location.href;
-            customPlayerInserted = false;
-            qualitySet = false;
+            customVideoInserted = false; qualitySet = false;
 
-            removePageAds();
             popupRemover();
-            clearAllPlayers();
+            removePageAds();
+            clearAllPlayers(true);
         }
     }, 100);
 })();
