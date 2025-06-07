@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.1.7
+// @version      1.1.8
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -23,6 +23,10 @@
             - and also give them money for the ADs to the YouTuber :D
 
         Thank you for using my AdBlocker.
+
+        Changelogs:
+                v1.1.8:
+                   - All the problems with the new code reorganization have been fixed.
     */
 
     const SETTINGS = {
@@ -322,11 +326,11 @@ tp-yt-iron-overlay-backdrop,
     function runDataInterval() {
         if (dataInterval) clearInterval(dataInterval);
         dataInterval = setInterval(() => {
-            if (!videoElement) videoElement = document.querySelector("video");
-            if (!playerElement) {
-                let tempPlayerElement = document.querySelector("#player");
-                if (tempPlayerElement.className.indexOf("skeleton") === -1) playerElement = tempPlayerElement;
-            }
+            let tempVideoElement = document.querySelector("video");
+            if (tempVideoElement && (tempVideoElement.src || tempVideoElement.className.indexOf("stream") !== -1)) videoElement = tempVideoElement;
+
+            let tempPlayerElement = document.querySelector("#player");
+            if (tempPlayerElement && tempPlayerElement.className.indexOf("skeleton") === -1) playerElement = tempPlayerElement;
         }, 100);
     }
 
@@ -365,7 +369,11 @@ tp-yt-iron-overlay-backdrop,
             if (!videoElement) return;
 
             // display //
-            videoElement.parentElement.style.display = "none";
+            if (videoElement.parentElement) {
+                videoElement.parentElement.style.display = "none";
+            } else {
+                videoElement.style.display = "none";
+            }
 
             // audio and time //
             videoElement.volume = 0; videoElement.muted = true;
