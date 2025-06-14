@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      1.1.8
+// @version      2.0.0
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -10,6 +10,7 @@
 // @updateURL    https://github.com/mstudio45/YoutubeAdBlocker/raw/main/YTADBlocker.user.js
 // @downloadURL  https://github.com/mstudio45/YoutubeAdBlocker/raw/main/YTADBlocker.user.js
 // @grant        none
+// @noframes
 // ==/UserScript==
 
 
@@ -25,8 +26,13 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
-                v1.1.8:
-                   - All the problems with the new code reorganization have been fixed.
+                v2.0.0:
+                   - Faster load time
+                   - Switched to YouTube IFrame API
+                   - Added support for keybind shortcuts outside of the iframe focus (most of them)
+                   - The saved timestamp is more accurate (the video will not show as fully played in your history if you paused the video for a longer time)
+                   - Better playlist handling
+                   - Disabled ADBlock in external IFrames outside of youtube.com
     */
 
     const SETTINGS = {
@@ -83,8 +89,12 @@
     let isStream = false;
     let qualitySet = false;
 
+    let apiPlayer = undefined;
     let customPlayer = undefined;
+
     let customVideoInserted = false;
+    let apiScriptInserted = false;
+    let videoLoaded = false;
 
     let adBlockInterval = undefined;
     let muteInterval = undefined;
@@ -99,6 +109,8 @@
     ///////////////////////////////////////////////////////////////////////////////////////////
 
     function updateAlert(scriptUrl, githubVersion, currentVersion) {
+        if (hasIgnoredUpdate) return;
+
         const result = window.confirm("Remove Adblock Thing: A new version is available! Do you want to update the script? Latest: " + githubVersion + " | Currently installed: " + currentVersion);
         if (result) { window.open(scriptUrl, "_blank"); } else {
             hasIgnoredUpdate = true;
@@ -166,9 +178,15 @@
     function getYouTubeLinkData(urlString) {
         const DATA = {
             ID: "",
-            params: "?autoplay=1&modestbranding=1&rel=0",
-            timestamp: 0,
-            playlist: false,
+            // playlist: false,
+            params: {
+                modestbranding: 1,
+                rel: 0,
+                start: 0,
+                controls: 1,
+
+                autoplay: 0, loop: 0
+            }
         }
         if (!urlString) return DATA;
 
@@ -177,23 +195,41 @@
         const urlParams = url.searchParams;
 
         // Get Video ID //
-        if (urlParams.has("v")) { DATA.ID = urlParams.get("v"); } else {
+        if (urlParams.has("v")) {
+            DATA.ID = urlParams.get("v");
+        } else {
             const paths = url.pathname.split("/");
             const liveIndex = paths.indexOf("live")
 
             if (liveIndex !== -1 && liveIndex + 1 < paths.length) DATA.ID = paths[liveIndex + 1];
         }
+
         if (DATA.ID == "") return DATA;
 
-        // Fetch data //
+        /* Handle Playlists //
         if (urlParams.has("list")) {
-            DATA.playlist = true;
-            // DATA.params = DATA.params + "&listType=playlist&list=" + urlParams.get("list");
-        }
+            const listValue = urlParams.get("list");
 
+            if (listValue && !listValue.startsWith("WL") && !listValue.startsWith("LL")) {
+                DATA.params.autoplay = 0;
+
+                DATA.playlist = true;
+                DATA.params.listType = "playlist";
+                DATA.params.list = listValue;
+
+                // Handle playlist index //
+                if (urlParams.has("index")) {
+                    const parsedIndex = parseInt(urlParams.get("index"));
+                    DATA.params.index = (Number.isNaN(parsedIndex) ? 1 : parsedIndex) - 1;
+                } else {
+                    DATA.params.index = 0;
+                }
+            }
+        }*/
+
+        // Handle Start time //
         if (urlParams.has("t") || urlParams.has("start")) {
-            DATA.timestamp = parseInt((urlParams.get("t") || urlParams.get("start")).replace("s", ""));
-            DATA.params = DATA.params + "&start=" + DATA.timestamp.toString();
+            DATA.params.start = parseInt((urlParams.get("t") || urlParams.get("start")).replace("s", "")) || 0;
         }
 
         return DATA;
@@ -202,9 +238,7 @@
     function isShortsPage() { return window.location.href.includes("/shorts/") }
     function isVideoPage() { return window.location.href.includes("watch?v=") || window.location.href.includes("/clip"); }
     function isAdPlaying() {
-        const isAdText = document.querySelector(".ytp-ad-text");
-        const skipAdBtn = document.querySelector(".ytp-ad-skip-button");
-        if (isAdText || skipAdBtn) return true;
+        if (document.querySelector("div.ad-showing")) return true;
         return false;
     }
 
@@ -325,13 +359,16 @@ tp-yt-iron-overlay-backdrop,
     // Video Ad Block //
     function runDataInterval() {
         if (dataInterval) clearInterval(dataInterval);
-        dataInterval = setInterval(() => {
+
+        const findVideo = () => {
             let tempVideoElement = document.querySelector("video");
             if (tempVideoElement && (tempVideoElement.src || tempVideoElement.className.indexOf("stream") !== -1)) videoElement = tempVideoElement;
 
             let tempPlayerElement = document.querySelector("#player");
             if (tempPlayerElement && tempPlayerElement.className.indexOf("skeleton") === -1) playerElement = tempPlayerElement;
-        }, 100);
+        };
+        setTimeout(findVideo, 1);
+        dataInterval = setInterval(findVideo, 100);
     }
 
     function setToLowestQuality() {
@@ -375,9 +412,19 @@ tp-yt-iron-overlay-backdrop,
                 videoElement.style.display = "none";
             }
 
-            // audio and time //
+            // audio //
             videoElement.volume = 0; videoElement.muted = true;
-            if (videoElement.paused) videoElement.play();
+
+            // time //
+            if (apiPlayer && isAdPlaying() !== true && apiPlayer.getPlayerState) {
+                const state = apiPlayer.getPlayerState()
+                if (state == 1) {
+                    videoElement.currentTime = apiPlayer.getCurrentTime();
+                    if (!videoElement.paused) videoElement.pause();
+                } else if (state == 0) { // handle playing new videos since autoplay is disabled due to playlist fixes //
+                    if (videoElement.paused) videoElement.play();
+                }
+            }
 
             // quality //
             if (qualitySet !== true) qualitySet = setToLowestQuality();
@@ -389,17 +436,112 @@ tp-yt-iron-overlay-backdrop,
     function videoAdBlocker() {
         if (SETTINGS.adBlocker !== true) return;
         currentUrl = window.location.href;
+        log("Starting video ad block...");
 
-        muteMainVideo();
+        // Mute Main Video
         if (adBlockInterval) clearInterval(adBlockInterval);
+        log("Running mute handler..."); muteMainVideo();
 
-        adBlockInterval = setInterval(() => {
-            if (!isVideoPage() || isShortsPage() || customVideoInserted === true) return;
-            if (!videoElement || !playerElement) return;
+        // Create API Script //
+        if (apiScriptInserted !== true) {
+            log("Inserting API..."); const tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag);
+            apiScriptInserted = true;
+        }
+
+        // Keybinds for IFrame //
+        log("Creating keybind listener..."); document.addEventListener("keydown", (event) => {
+            if (!customPlayer || event.isComposing || event.keyCode === 229) return;
+            if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA" || event.target.isContentEditable) return; // ignore input fields //
+
+            // https://support.google.com/youtube/answer/7631406?hl=en //
+            // You can load and unload captions only once so the "c" shortcut is not possible //
+            // Fullscreen "f" is not possible because you need to interact with the iframe atleast once and then the browser automatically uses that iframe for fullscreen //
+            // Certain stuff is ignored because it's not avalaible in the iframe //
+            switch (event.key.toLowerCase()) {
+                    // Play/Pause //
+                case " ":
+                case "k":
+                    event.preventDefault();
+                    apiPlayer.getPlayerState() === 1 ? apiPlayer.pauseVideo() : apiPlayer.playVideo();
+                    break;
+
+                    // Mute/unmute the video //
+                case "m":
+                    event.preventDefault();
+                    apiPlayer.isMuted() ? apiPlayer.unMute() : apiPlayer.mute();
+                    break;
+
+                    // Seek backward/forward 5 seconds //
+                case "arrowright":
+                    event.preventDefault();
+                    apiPlayer.seekTo(apiPlayer.getCurrentTime() + 5, true);
+                    break;
+                case "arrowleft":
+                    event.preventDefault();
+                    apiPlayer.seekTo(apiPlayer.getCurrentTime() - 5, true);
+                    break;
+
+                    // Increase/Decrease volume 5% //
+                case "arrowup":
+                    event.preventDefault();
+                    apiPlayer.setVolume(apiPlayer.getVolume() + 5, true);
+                    break;
+                case "arrowdown":
+                    event.preventDefault();
+                    apiPlayer.setVolume(apiPlayer.getVolume() - 5, true);
+                    break;
+
+                    // Seek backward/forward 10 seconds //
+                case "l":
+                    event.preventDefault();
+                    apiPlayer.seekTo(apiPlayer.getCurrentTime() + 10, true);
+                    break;
+                case "j":
+                    event.preventDefault();
+                    apiPlayer.seekTo(apiPlayer.getCurrentTime() - 10, true);
+                    break;
+
+                    // Seek to next/previous frame (60 fps) //
+                case ".":
+                    event.preventDefault();
+                    apiPlayer.seekTo(apiPlayer.getCurrentTime() + (1 / 60));
+                    break;
+                case ",":
+                    event.preventDefault();
+                    apiPlayer.seekTo(apiPlayer.getCurrentTime() - (1 / 60));
+                    break;
+
+                    // Seek to 0% to 90% of the video //
+                case "0":
+                case "1":
+                case "2":
+                case "3":
+                case "4":
+                case "5":
+                case "6":
+                case "7":
+                case "8":
+                case "9":
+                    event.preventDefault();
+                    apiPlayer.seekTo(
+                        ((parseInt(event.key) * 10) / 100) * apiPlayer.getDuration(), true
+                    );
+                    break;
+            }
+        });
+
+        // Main Handler //
+        log("Starting AD Block...");
+        const createPlayerFunc = () => {
+            if (!isVideoPage() || isShortsPage() || customVideoInserted === true) return; // invalid page or inserted
+            if (!videoElement || !playerElement) return; // missing actual player
+            if (!window.YT) return; // missing API
 
             // Reset players //
             log("Clearing duplicate players and muting main player...");
             clearAllPlayers(true);
+            if (customPlayer) customPlayer.remove();
+            if (apiPlayer) { apiPlayer.destroy(); apiPlayer = undefined; };
 
             // Get video details //
             const videoData = getYouTubeLinkData(window.location.href)
@@ -409,19 +551,8 @@ tp-yt-iron-overlay-backdrop,
             log("Video ID: " + videoData.ID);
             customVideoInserted = true;
 
-            if (customPlayer) customPlayer.remove();
-            customPlayer = document.createElement("iframe");
+            customPlayer = document.createElement("div"); // iframe
             customPlayer.id = "customiframeplayer";
-
-            customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + videoData.ID + videoData.params);
-            customPlayer.setAttribute('frameborder', '0');
-            customPlayer.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
-            customPlayer.setAttribute('allowfullscreen', true);
-            customPlayer.setAttribute('mozallowfullscreen', "mozallowfullscreen");
-            customPlayer.setAttribute('msallowfullscreen', "msallowfullscreen");
-            customPlayer.setAttribute('oallowfullscreen', "oallowfullscreen");
-            customPlayer.setAttribute('webkitallowfullscreen', "webkitallowfullscreen");
-
             customPlayer.style.width = '100%'; customPlayer.style.height = '100%';
             customPlayer.style.position = 'absolute';
             customPlayer.style.top = '0';
@@ -429,36 +560,60 @@ tp-yt-iron-overlay-backdrop,
             customPlayer.style.zIndex = '1000';
             customPlayer.style.pointerEvents = 'all';
 
-            // Get saved timestamp //
-            if (videoElement && videoElement.currentTime >= 10 && videoData.params.indexOf("&start=") === -1) { // only works with 10 seconds or more
-                videoElement.volume = 0;
-
-                videoData.timestamp = parseInt(videoElement.currentTime.toString().split(".")[0]);
-                videoData.params = videoData.params + "&start=" + videoData.timestamp.toString();
-                customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + videoData.ID + videoData.params);
-
-                log("Set start time to the saved timestamp.")
-            }
-
-            log("Inserting IFrame...");
+            log("Inserting Player...");
             playerElement.appendChild(customPlayer);
-        }, 1500);
+            apiPlayer = new window.YT.Player("customiframeplayer", {
+                host: "https://www.youtube-nocookie.com",
+
+                videoId: videoData.ID,
+                playerVars: videoData.params,
+
+                events: {
+                    onReady: function(event) {
+                        event.target.pauseVideo();
+
+                        // Get saved timestamp //
+                        if (videoElement && videoElement.currentTime >= 10 && videoElement.currentTime < (event.target.getDuration() - 60) && videoData.params.start === 0) { // 10+ seconds in start, - 60 seconds before end //
+                            videoData.params.start = parseInt(videoElement.currentTime.toString().split(".")[0]);
+
+                            event.target.seekTo(videoData.params.start);
+                            log("Set start time to the saved timestamp.")
+                        }
+
+                        event.target.playVideo();
+                        log("AdBlock player successfully loaded!", "success");
+                        videoLoaded = true;
+                    },
+
+                    onError: function(event) {
+                        log("YouTube player error:", "error", event.data);
+                    }
+                }
+            });
+
+            // Change the interval time //
+            clearInterval(adBlockInterval);
+            adBlockInterval = setInterval(createPlayerFunc, 1500);
+        };
+        adBlockInterval = setInterval(createPlayerFunc, 10);
     }
 
     // Timestamp fixer //
     function timestampFixer() {
         document.addEventListener('click', function(event) {
-            if (!customPlayer) return;
+            if (!apiPlayer) return;
 
             const target = event.target;
             if (!(target.tagName === 'A' && target.href)) return;
             if (!target.href.includes("/watch?v=")) return;
 
-            const VideoData = getYouTubeLinkData(target.href)
-            if (VideoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
+            const videoData = getYouTubeLinkData(target.href)
+            if (videoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
 
-            log("Seeking to timestamp...", "", VideoData.timestamp);
-            customPlayer.setAttribute('src', "https://www.youtube-nocookie.com/embed/" + VideoData.ID + VideoData.params);
+            log("Seeking to timestamp...", "", videoData.params.start);
+            apiPlayer.pauseVideo();
+            apiPlayer.seekTo(videoData.params.start);
+            apiPlayer.playVideo();
         });
     }
 
@@ -475,18 +630,17 @@ tp-yt-iron-overlay-backdrop,
     }
 
     updateChecker();
-    log("Script started!", "success");
 
     // Update loop //
     setInterval(() => {
-        if (window.location.href !== currentUrl) {
-            log("________________________")
-            currentUrl = window.location.href;
-            customVideoInserted = false; qualitySet = false;
+        if (window.location.href === currentUrl) return;
 
-            popupRemover();
-            removePageAds();
-            clearAllPlayers(true);
-        }
+        log("________________________")
+        currentUrl = window.location.href;
+        customVideoInserted = false; qualitySet = false; videoLoaded = false;
+
+        popupRemover();
+        removePageAds();
+        clearAllPlayers(true);
     }, 100);
 })();
