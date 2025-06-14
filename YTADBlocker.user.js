@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.0
+// @version      2.0.1
 // @description  Removes Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -26,6 +26,9 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
+                v2.0.1:
+                   - Fixed saved timestamp getting overwritten by ADs or the new main player handler
+
                 v2.0.0:
                    - Faster load time
                    - Switched to YouTube IFrame API
@@ -49,15 +52,15 @@
     function log(log, level, ...args) {
         if (!SETTINGS.debugMessages) return;
 
-        const prefix = '[YouTube AdBlocker]';
+        const prefix = "[YouTube AdBlocker]";
         switch (level) {
-            case 'error':
+            case "error":
                 console.warn(`${prefix} ❌`, log, ...args);
                 break;
-            case 'success':
+            case "success":
                 console.log(`${prefix} ✅`, log, ...args);
                 break;
-            case 'warning':
+            case "warning":
                 console.warn(`${prefix} ⚠️`, log, ...args);
                 break;
             default:
@@ -109,7 +112,7 @@
     ///////////////////////////////////////////////////////////////////////////////////////////
 
     function updateAlert(scriptUrl, githubVersion, currentVersion) {
-        if (hasIgnoredUpdate) return;
+        if (hasIgnoredUpdate === true) return;
 
         const result = window.confirm("Remove Adblock Thing: A new version is available! Do you want to update the script? Latest: " + githubVersion + " | Currently installed: " + currentVersion);
         if (result) { window.open(scriptUrl, "_blank"); } else {
@@ -206,7 +209,7 @@
 
         if (DATA.ID == "") return DATA;
 
-        /* Handle Playlists //
+        /* Handle Playlists (We ignore playlists and let YouTube auto play do it's job at the end of each video - this also makes randomized and "Mix - ..." playlists supported) //
         if (urlParams.has("list")) {
             const listValue = urlParams.get("list");
 
@@ -259,7 +262,7 @@
 
             // Ad Block PopUp //
             const bodyStyle = document.body.style;
-            bodyStyle.setProperty('overflow-y', 'auto', 'important');
+            bodyStyle.setProperty("overflow-y", "auto", "important");
 
             // Error Screen //
             const errorScreen = document.querySelector("#error-screen");
@@ -307,7 +310,7 @@
         if (SETTINGS.removePageAds !== true) return;
 
         if (document.querySelector("#remadover") == undefined) {
-            const style = document.createElement('style');
+            const style = document.createElement("style");
             style.id = "remadover"
             style.textContent = `ytd-action-companion-ad-renderer,
 ytd-display-ad-renderer,
@@ -345,7 +348,7 @@ tp-yt-iron-overlay-backdrop,
                     if (element.childNodes && element.childNodes.length > 0) {
                         element.childNodes.forEach((childElement) => {
                             if (childElement && childElement.data && childElement.data.targetId && childElement.data.targetId !== "engagement-panel-macro-markers-description-chapters") {
-                                element.style.display = 'none';
+                                element.style.display = "none";
                             }
                         });
                     }
@@ -416,12 +419,17 @@ tp-yt-iron-overlay-backdrop,
             videoElement.volume = 0; videoElement.muted = true;
 
             // time //
-            if (apiPlayer && isAdPlaying() !== true && apiPlayer.getPlayerState) {
+            if (videoLoaded === true && apiPlayer && apiPlayer.getPlayerState && isAdPlaying() !== true) {
                 const state = apiPlayer.getPlayerState()
-                if (state == 1) {
+                if (state == window.YT.PlayerState.PLAYING) {
                     videoElement.currentTime = apiPlayer.getCurrentTime();
+                    if (videoElement.paused) videoElement.play();
+
+                } else if (state == window.YT.PlayerState.PAUSED) {
                     if (!videoElement.paused) videoElement.pause();
-                } else if (state == 0) { // handle playing new videos since autoplay is disabled due to playlist fixes //
+
+                } else if (state == window.YT.PlayerState.ENDED) {
+                    // handle playing new videos since autoplay is disabled due to playlist fixes //
                     if (videoElement.paused) videoElement.play();
                 }
             }
@@ -444,7 +452,7 @@ tp-yt-iron-overlay-backdrop,
 
         // Create API Script //
         if (apiScriptInserted !== true) {
-            log("Inserting API..."); const tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag);
+            log("Inserting API..."); const tag = document.createElement("script"); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag);
             apiScriptInserted = true;
         }
 
@@ -459,8 +467,7 @@ tp-yt-iron-overlay-backdrop,
             // Certain stuff is ignored because it's not avalaible in the iframe //
             switch (event.key.toLowerCase()) {
                     // Play/Pause //
-                case " ":
-                case "k":
+                case " ": case "k":
                     event.preventDefault();
                     apiPlayer.getPlayerState() === 1 ? apiPlayer.pauseVideo() : apiPlayer.playVideo();
                     break;
@@ -512,16 +519,7 @@ tp-yt-iron-overlay-backdrop,
                     break;
 
                     // Seek to 0% to 90% of the video //
-                case "0":
-                case "1":
-                case "2":
-                case "3":
-                case "4":
-                case "5":
-                case "6":
-                case "7":
-                case "8":
-                case "9":
+                case "0": case "1": case "2": case "3": case "4": case "5": case "6": case "7": case "8": case "9":
                     event.preventDefault();
                     apiPlayer.seekTo(
                         ((parseInt(event.key) * 10) / 100) * apiPlayer.getDuration(), true
@@ -547,18 +545,25 @@ tp-yt-iron-overlay-backdrop,
             const videoData = getYouTubeLinkData(window.location.href)
             if (videoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
 
+            // Get saved timestamp //
+            if (videoElement && videoElement.currentTime >= 10 && videoData.params.start === 0) { // 10+ seconds //
+                videoData.params.start = parseInt(videoElement.currentTime.toString().split(".")[0]);
+                log("Start time was set to the saved timestamp.", "success");
+            }
+
             // Load //
             log("Video ID: " + videoData.ID);
             customVideoInserted = true;
 
             customPlayer = document.createElement("div"); // iframe
             customPlayer.id = "customiframeplayer";
-            customPlayer.style.width = '100%'; customPlayer.style.height = '100%';
-            customPlayer.style.position = 'absolute';
-            customPlayer.style.top = '0';
-            customPlayer.style.left = '0';
-            customPlayer.style.zIndex = '1000';
-            customPlayer.style.pointerEvents = 'all';
+            customPlayer.style.width = "100%";
+            customPlayer.style.height = "100%";
+            customPlayer.style.position = "absolute";
+            customPlayer.style.top = "0";
+            customPlayer.style.left = "0";
+            customPlayer.style.zIndex = "1000";
+            customPlayer.style.pointerEvents = "all";
 
             log("Inserting Player...");
             playerElement.appendChild(customPlayer);
@@ -570,23 +575,9 @@ tp-yt-iron-overlay-backdrop,
 
                 events: {
                     onReady: function(event) {
-                        event.target.pauseVideo();
-
-                        // Get saved timestamp //
-                        if (videoElement && videoElement.currentTime >= 10 && videoElement.currentTime < (event.target.getDuration() - 60) && videoData.params.start === 0) { // 10+ seconds in start, - 60 seconds before end //
-                            videoData.params.start = parseInt(videoElement.currentTime.toString().split(".")[0]);
-
-                            event.target.seekTo(videoData.params.start);
-                            log("Set start time to the saved timestamp.")
-                        }
-
                         event.target.playVideo();
                         log("AdBlock player successfully loaded!", "success");
                         videoLoaded = true;
-                    },
-
-                    onError: function(event) {
-                        log("YouTube player error:", "error", event.data);
                     }
                 }
             });
@@ -600,11 +591,11 @@ tp-yt-iron-overlay-backdrop,
 
     // Timestamp fixer //
     function timestampFixer() {
-        document.addEventListener('click', function(event) {
+        document.addEventListener("click", function(event) {
             if (!apiPlayer) return;
 
             const target = event.target;
-            if (!(target.tagName === 'A' && target.href)) return;
+            if (!(target.tagName === "A" && target.href)) return;
             if (!target.href.includes("/watch?v=")) return;
 
             const videoData = getYouTubeLinkData(target.href)
