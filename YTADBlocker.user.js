@@ -465,12 +465,15 @@ tp-yt-iron-overlay-backdrop,
         log("Creating keybind listener..."); document.addEventListener("keydown", (event) => {
             if (event.isComposing || event.keyCode === 229) return;
             if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA" || event.target.isContentEditable) return; // ignore input fields //
-            if (!customPlayer && (videoLoaded === true || customVideoInserted === true)) { event.preventDefault(); return; } // ignore keys when loading the player //
+
+            // ignore keys when loading the player //
+            const key = event.key.toLowerCase();
+            if (key === "f") { event.preventDefault(); }; if (!customPlayer && (videoLoaded === true || customVideoInserted === true)) { event.preventDefault(); return; }
 
             // https://support.google.com/youtube/answer/7631406?hl=en //
             // You can load and unload captions only once so the "c" shortcut is not possible //
             // Certain stuff is ignored because it's not avalaible in the iframe //
-            switch (event.key.toLowerCase()) {
+            switch (key) {
                 case "f":
                     event.preventDefault();
                     if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
