@@ -25,7 +25,7 @@
 
         Thank you for using my AdBlocker.
 
-        Changelogs: https://github.com/mstudio45/YoutubeAdBlocker/CHANGLOGS.md
+        Changelogs: https://github.com/mstudio45/YoutubeAdBlocker/blob/main/CHANGELOGS.md
     */
 
     const SETTINGS = {
