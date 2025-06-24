@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.1
-// @description  Removes Adblock Thing
+// @version      2.0.2
+// @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
 // @match        http://www.youtube.com/*
@@ -26,6 +26,11 @@
         Thank you for using my AdBlocker.
 
         Changelogs:
+                v2.0.2:
+                   - Added fullscreen keybind
+                   - Added an error handler for loading the video
+                   - customPlayer variable refreshes to the new iframe
+
                 v2.0.1:
                    - Fixed saved timestamp getting overwritten by ADs or the new main player handler
 
@@ -114,7 +119,7 @@
     function updateAlert(scriptUrl, githubVersion, currentVersion) {
         if (hasIgnoredUpdate === true) return;
 
-        const result = window.confirm("Remove Adblock Thing: A new version is available! Do you want to update the script? Latest: " + githubVersion + " | Currently installed: " + currentVersion);
+        const result = window.confirm("YouTube AdBlocker: A new version is available! Do you want to update the script? Latest: " + githubVersion + " | Currently installed: " + currentVersion);
         if (result) { window.open(scriptUrl, "_blank"); } else {
             hasIgnoredUpdate = true;
             clearInterval(updateInterval);
@@ -148,7 +153,7 @@
                     return;
                 }
 
-                log("Remove Adblock Thing: A new version is available. Please update your script. Latest: " + githubVersion + " | Currently installed: " + currentVersion, "warn");
+                log("YouTube AdBlocker: A new version is available. Please update your script. Latest: " + githubVersion + " | Currently installed: " + currentVersion, "warn");
                 updateAlert(scriptUrl + "?random" + (Math.random() + 1).toString(36).substring(7) + "=" + (Math.random() + 1).toString(36).substring(7), githubVersion, currentVersion);
             }).catch(error => {
                 hasIgnoredUpdate = true;
@@ -458,14 +463,35 @@ tp-yt-iron-overlay-backdrop,
 
         // Keybinds for IFrame //
         log("Creating keybind listener..."); document.addEventListener("keydown", (event) => {
-            if (!customPlayer || event.isComposing || event.keyCode === 229) return;
+            if (event.isComposing || event.keyCode === 229) return;
             if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA" || event.target.isContentEditable) return; // ignore input fields //
+            if (!customPlayer && (videoLoaded === true || customVideoInserted === true)) { event.preventDefault(); return; } // ignore keys when loading the player //
 
             // https://support.google.com/youtube/answer/7631406?hl=en //
             // You can load and unload captions only once so the "c" shortcut is not possible //
-            // Fullscreen "f" is not possible because you need to interact with the iframe atleast once and then the browser automatically uses that iframe for fullscreen //
             // Certain stuff is ignored because it's not avalaible in the iframe //
             switch (event.key.toLowerCase()) {
+                case "f":
+                    event.preventDefault();
+                    if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+                        if (customPlayer.requestFullscreen) {
+                            customPlayer.requestFullscreen();
+                        } else if (customPlayer.webkitRequestFullscreen) {
+                            customPlayer.webkitRequestFullscreen();
+                        } else if (customPlayer.msRequestFullscreen) {
+                            customPlayer.msRequestFullscreen();
+                        }
+                    } else {
+                        if (document.exitFullscreen) {
+                            document.exitFullscreen();
+                        } else if (document.webkitExitFullscreen) {
+                            document.webkitExitFullscreen();
+                        } else if (document.msExitFullscreen) {
+                            document.msExitFullscreen();
+                        }
+                    }
+                    break;
+
                     // Play/Pause //
                 case " ": case "k":
                     event.preventDefault();
@@ -565,26 +591,47 @@ tp-yt-iron-overlay-backdrop,
             customPlayer.style.zIndex = "1000";
             customPlayer.style.pointerEvents = "all";
 
-            log("Inserting Player...");
-            playerElement.appendChild(customPlayer);
-            apiPlayer = new window.YT.Player("customiframeplayer", {
-                host: "https://www.youtube-nocookie.com",
+            try {
+                log("Inserting Player...");
+                playerElement.appendChild(customPlayer);
+                apiPlayer = new window.YT.Player("customiframeplayer", {
+                    host: "https://www.youtube-nocookie.com",
 
-                videoId: videoData.ID,
-                playerVars: videoData.params,
+                    videoId: videoData.ID,
+                    playerVars: videoData.params,
 
-                events: {
-                    onReady: function(event) {
-                        event.target.playVideo();
-                        log("AdBlock player successfully loaded!", "success");
-                        videoLoaded = true;
+                    events: {
+                        onReady: function(event) {
+                            event.target.playVideo();
+                            log("AdBlock player successfully loaded!", "success");
+                            videoLoaded = true;
+
+                            customPlayer = document.querySelector("#customiframeplayer");
+                            customPlayer.allowFullscreen = true; // works for some browsers
+                            customPlayer.setAttribute('allowfullscreen', ''); // important for others
+                        }
                     }
-                }
-            });
+                });
 
-            // Change the interval time //
-            clearInterval(adBlockInterval);
-            adBlockInterval = setInterval(createPlayerFunc, 1500);
+                // Change the interval time //
+                clearInterval(adBlockInterval);
+                adBlockInterval = setInterval(createPlayerFunc, 1500);
+            } catch (error) {
+                videoLoaded = true;
+
+                const p = document.createElement("p"); // iframe
+                p.id = "errorcode";
+                p.style.position = "relative";
+                p.style.color = "white";
+                p.style.fontSize = "large";
+                p.style.textAlign = "center";
+                p.style.zIndex = "9999";
+                p.innerText = "Failed to load the video player, refreshing the page in 5 seconds...\n" + error.toString();
+
+                playerElement.parentElement.parentElement.insertBefore(p, playerElement.parentElement.parentElement.firstChild);
+                clearInterval(adBlockInterval);
+                setTimeout(function() { window.location.reload(); }, 5000);
+            }
         };
         adBlockInterval = setInterval(createPlayerFunc, 10);
     }
