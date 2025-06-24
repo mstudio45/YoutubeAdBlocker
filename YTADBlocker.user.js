@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.2
+// @version      2.0.3
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -25,22 +25,7 @@
 
         Thank you for using my AdBlocker.
 
-        Changelogs:
-                v2.0.2:
-                   - Added fullscreen keybind
-                   - Added an error handler for loading the video
-                   - customPlayer variable refreshes to the new iframe
-
-                v2.0.1:
-                   - Fixed saved timestamp getting overwritten by ADs or the new main player handler
-
-                v2.0.0:
-                   - Faster load time
-                   - Switched to YouTube IFrame API
-                   - Added support for keybind shortcuts outside of the iframe focus (most of them)
-                   - The saved timestamp is more accurate (the video will not show as fully played in your history if you paused the video for a longer time)
-                   - Better playlist handling
-                   - Disabled ADBlock in external IFrames outside of youtube.com
+        Changelogs: https://github.com/mstudio45/YoutubeAdBlocker/CHANGLOGS.md
     */
 
     const SETTINGS = {
@@ -110,6 +95,29 @@
     // Intervals //
     let dataInterval = undefined;
 
+    function resetEverything() {
+        // Update Variables //
+        hasUpdated = false;
+        hasIgnoredUpdate = false;
+        if (updateInterval) clearInterval(updateInterval); updateInterval = undefined;
+
+        // Video Variables //
+        isStream = false;
+        qualitySet = false;
+
+        apiPlayer = undefined;
+        customPlayer = undefined;
+
+        customVideoInserted = false;
+        apiScriptInserted = false;
+        videoLoaded = false;
+
+        if (adBlockInterval) clearInterval(adBlockInterval); adBlockInterval = undefined;
+        if (muteInterval) clearInterval(muteInterval); muteInterval = undefined;
+
+        // Intervals //
+        if (dataInterval) clearInterval(dataInterval); dataInterval = undefined;
+    }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////////////////////////////////////
@@ -162,7 +170,7 @@
         }
 
         checkVersion();
-        updateInterval = setInterval(checkVersion, 120_000) // 120 seconds for update checks.
+        updateInterval = setInterval(checkVersion, 120_000) // 120 seconds for update checks. //
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
@@ -188,11 +196,9 @@
             ID: "",
             // playlist: false,
             params: {
-                modestbranding: 1,
-                rel: 0,
                 start: 0,
-                controls: 1,
 
+                controls: 1, rel: 0,
                 autoplay: 0, loop: 0
             }
         }
@@ -211,33 +217,13 @@
 
             if (liveIndex !== -1 && liveIndex + 1 < paths.length) DATA.ID = paths[liveIndex + 1];
         }
-
         if (DATA.ID == "") return DATA;
-
-        /* Handle Playlists (We ignore playlists and let YouTube auto play do it's job at the end of each video - this also makes randomized and "Mix - ..." playlists supported) //
-        if (urlParams.has("list")) {
-            const listValue = urlParams.get("list");
-
-            if (listValue && !listValue.startsWith("WL") && !listValue.startsWith("LL")) {
-                DATA.params.autoplay = 0;
-
-                DATA.playlist = true;
-                DATA.params.listType = "playlist";
-                DATA.params.list = listValue;
-
-                // Handle playlist index //
-                if (urlParams.has("index")) {
-                    const parsedIndex = parseInt(urlParams.get("index"));
-                    DATA.params.index = (Number.isNaN(parsedIndex) ? 1 : parsedIndex) - 1;
-                } else {
-                    DATA.params.index = 0;
-                }
-            }
-        }*/
 
         // Handle Start time //
         if (urlParams.has("t") || urlParams.has("start")) {
             DATA.params.start = parseInt((urlParams.get("t") || urlParams.get("start")).replace("s", "")) || 0;
+        } else {
+            DATA.params.start = 0;
         }
 
         return DATA;
@@ -254,7 +240,7 @@
     let popUpInterval = undefined;
     let isPopupBeingProcessed = false;
 
-    function removeFakeErrorScreen() { // "Ad blockers violate YouTube's Terms of Service" safari modal
+    function removeFakeErrorScreen() { // "Ad blockers violate YouTube's Terms of Service" safari modal //
         const errorScreen = document.querySelector("#error-screen");
         if (errorScreen) errorScreen.remove();
     }
@@ -292,7 +278,7 @@
                 if (popupButton) popupButton.click();
                 popup.remove();
 
-                // Unpause video
+                // Unpause video //
                 videoElement.play();
                 setTimeout(() => { if (videoElement.paused) videoElement.play(); }, 1000);
 
@@ -446,12 +432,15 @@ tp-yt-iron-overlay-backdrop,
         muteInterval = setInterval(muteVideo, 500);
     }
 
-    function videoAdBlocker() {
+    function videoAdBlocker(waitAMoment) {
         if (SETTINGS.adBlocker !== true) return;
+        if (isShortsPage()) { log("Shorts found, ad block skipped..."); return; }
+        if (!isVideoPage()) { log("Video page not found, ad block skipped..."); return; }
+
         currentUrl = window.location.href;
         log("Starting video ad block...");
 
-        // Mute Main Video
+        // Mute Main Video //
         if (adBlockInterval) clearInterval(adBlockInterval);
         log("Running mute handler..."); muteMainVideo();
 
@@ -560,9 +549,9 @@ tp-yt-iron-overlay-backdrop,
         // Main Handler //
         log("Starting AD Block...");
         const createPlayerFunc = () => {
-            if (!isVideoPage() || isShortsPage() || customVideoInserted === true) return; // invalid page or inserted
-            if (!videoElement || !playerElement) return; // missing actual player
-            if (!window.YT) return; // missing API
+            if (customVideoInserted === true) return; // inserted //
+            if (!videoElement || !playerElement) return; // invalid page //
+            if (!window.YT) return; // missing API //
 
             // Reset players //
             log("Clearing duplicate players and muting main player...");
@@ -584,7 +573,7 @@ tp-yt-iron-overlay-backdrop,
             log("Video ID: " + videoData.ID);
             customVideoInserted = true;
 
-            customPlayer = document.createElement("div"); // iframe
+            customPlayer = document.createElement("div"); // this will turn into an iframe //
             customPlayer.id = "customiframeplayer";
             customPlayer.style.width = "100%";
             customPlayer.style.height = "100%";
@@ -610,8 +599,8 @@ tp-yt-iron-overlay-backdrop,
                             videoLoaded = true;
 
                             customPlayer = document.querySelector("#customiframeplayer");
-                            customPlayer.allowFullscreen = true; // works for some browsers
-                            customPlayer.setAttribute('allowfullscreen', ''); // important for others
+                            customPlayer.allowFullscreen = true; // works for some browsers //
+                            customPlayer.setAttribute('allowfullscreen', ''); // important for others //
                         }
                     }
                 });
@@ -622,7 +611,7 @@ tp-yt-iron-overlay-backdrop,
             } catch (error) {
                 videoLoaded = true;
 
-                const p = document.createElement("p"); // iframe
+                const p = document.createElement("p");
                 p.id = "errorcode";
                 p.style.position = "relative";
                 p.style.color = "white";
@@ -636,7 +625,7 @@ tp-yt-iron-overlay-backdrop,
                 setTimeout(function() { window.location.reload(); }, 5000);
             }
         };
-        adBlockInterval = setInterval(createPlayerFunc, 10);
+        adBlockInterval = setInterval(createPlayerFunc, waitAMoment === true ? 75 : 10);
     }
 
     // Timestamp fixer //
@@ -660,28 +649,39 @@ tp-yt-iron-overlay-backdrop,
 
     log("Starting script...", "success");
 
-    if (!isShortsPage()) {
-        runDataInterval(); // Video Data
+    function startMain(waitAMoment) {
+        if (isShortsPage()) return;
+
+        runDataInterval(); // Video Data handler //
 
         setTimeout(popupRemover, 1);
         setTimeout(removePageAds, 1);
 
-        timestampFixer(); // Comment timestamp fix
-        videoAdBlocker(); // Main AdBlock
+        timestampFixer(); // Comment timestamp fix //
+        videoAdBlocker(waitAMoment); // Main AdBlock //
     }
 
+    startMain();
     updateChecker();
 
-    // Update loop //
-    setInterval(() => {
-        if (window.location.href === currentUrl) return;
+    // URL update handler //
+    let isHandlingChange = false;
+    function handleUrlChange() {
+        if (window.location.href === currentUrl || isHandlingChange) return;
 
+        isHandlingChange = true;
         log("________________________")
-        currentUrl = window.location.href;
-        customVideoInserted = false; qualitySet = false; videoLoaded = false;
 
-        popupRemover();
-        removePageAds();
+        // reset all variables and intervals (and set currentUrl) //
+        resetEverything();
+
+        // restart all functions //
         clearAllPlayers(true);
-    }, 100);
+        startMain(true);
+        setTimeout(function() { isHandlingChange = false; }, 25);
+    }
+
+    // detect URL changes //
+    const observer = new MutationObserver(handleUrlChange);
+    observer.observe(document, { subtree: true, childList: true });
 })();
