@@ -11,3 +11,6 @@ An YouTube AD Blocker for Tampermonkey. Originated from [TheRealJoelmatic's Remo
 
 2. **Install the Script**:
    [Click Here and Press Install](YTADBlocker.user.js?raw=True)
+
+## Changelogs
+[Click here to see the changelogs](https://github.com/mstudio45/YoutubeAdBlocker/blob/main/CHANGELOGS.md)
