@@ -229,8 +229,9 @@
         return DATA;
     }
 
+    function getParameters() { return new URL(window.location.href).searchParams; }
     function isShortsPage() { return window.location.href.includes("/shorts/") }
-    function isVideoPage() { return window.location.href.includes("watch?v=") || window.location.href.includes("/clip"); }
+    function isVideoPage() { return window.location.href.includes(".com/watch") || window.location.href.includes("/clip"); }
     function isAdPlaying() {
         if (document.querySelector("div.ad-showing")) return true;
         return false;
