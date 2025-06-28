@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.3
+// @version      2.0.4
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -39,22 +39,22 @@
         removePopUps: true
     }
 
-    function log(log, level, ...args) {
+    function log(level, ...args) {
         if (!SETTINGS.debugMessages) return;
 
         const prefix = "[YouTube AdBlocker]";
         switch (level) {
             case "error":
-                console.warn(`${prefix} ❌`, log, ...args);
+                console.warn(`${prefix} ❌`, ...args);
                 break;
             case "success":
-                console.log(`${prefix} ✅`, log, ...args);
+                console.log(`${prefix} ✅`, ...args);
                 break;
             case "warning":
-                console.warn(`${prefix} ⚠️`, log, ...args);
+                console.warn(`${prefix} ⚠️`, ...args);
                 break;
             default:
-                console.info(`${prefix} ℹ️`, log, ...args);
+                console.info(`${prefix} ℹ️`, ...args);
         }
     }
 
@@ -75,6 +75,7 @@
 
     // Main Variables //
     let currentUrl = window.location.href;
+    let currentVideoBlob = "";
     let videoElement;
     let playerElement;
 
@@ -141,15 +142,15 @@
         if (updateInterval) clearInterval(updateInterval);
 
         const checkVersion = () => {
-            log("Checking version...")
+            log("info", "Checking version...")
             fetch(scriptUrl + "?random" + (Math.random() + 1).toString(36).substring(7) + "=" + (Math.random() + 1).toString(36).substring(7)).then(response => response.text()).then(data => {
                 if (hasIgnoredUpdate) { clearInterval(updateInterval); return; }
 
-                log("Extracting latest version...")
+                log("info", "Extracting latest version...")
                 // Extract version from the script on GitHub //
                 const match = data.match(/@version\s+([\d.]+)/);
                 if (!match) {
-                    log("Unable to extract version from the GitHub script.", "error")
+                    log("error", "Unable to extract version from the GitHub script.")
                     return;
                 }
 
@@ -157,15 +158,15 @@
                 const currentVersion = GM_info.script.version;
 
                 if (githubVersion === currentVersion) {
-                    log("You have the latest version of the script.", "success", githubVersion, "-", currentVersion);
+                    log("success", "You have the latest version of the script.", githubVersion, "-", currentVersion);
                     return;
                 }
 
-                log("YouTube AdBlocker: A new version is available. Please update your script. Latest: " + githubVersion + " | Currently installed: " + currentVersion, "warn");
+                log("warn", "YouTube AdBlocker: A new version is available. Please update your script. Latest: " + githubVersion + " | Currently installed: " + currentVersion);
                 updateAlert(scriptUrl + "?random" + (Math.random() + 1).toString(36).substring(7) + "=" + (Math.random() + 1).toString(36).substring(7), githubVersion, currentVersion);
             }).catch(error => {
                 hasIgnoredUpdate = true;
-                log("Error checking for updates:", "error", error)
+                log("error", "Error checking for updates:", error)
             });
         }
 
@@ -188,7 +189,7 @@
                 if (elements && elements.length > 0) {
                     elements.forEach((element) => element.remove());
                 }
-            } catch (e) { log("Error:", "error", elements, e) }
+            } catch (e) { log("error", "Error:", elements, e) }
         })
     }
     function getYouTubeLinkData(urlString) {
@@ -260,7 +261,7 @@
             const errorScreen = document.querySelector("#error-screen");
             if (errorScreen) {
                 errorScreen.remove();
-                log("Error modal removed.", "success");
+                log("success", "Error modal removed.");
             }
 
             // Modal //
@@ -268,7 +269,7 @@
             if (modalOverlay) {
                 modalOverlay.removeAttribute("opened");
                 modalOverlay.remove();
-                log("Modal has been removed.", "success");
+                log("success", "Modal has been removed.");
             }
 
             // ToS PopUp //
@@ -283,14 +284,14 @@
                 videoElement.play();
                 setTimeout(() => { if (videoElement.paused) videoElement.play(); }, 1000);
 
-                log("Popup has been removed.", "success");
+                log("success", "Popup has been removed.");
             }
 
             // PopUp Ads //
             const popupAd = document.querySelector("style-scope, .yt-about-this-ad-renderer");
             if (popupAd) {
                 popupAd.parentElement.parentElement.remove();
-                log("Popup ad center has been removed.", "success");
+                log("success", "Popup ad center has been removed.");
             }
 
             isPopupBeingProcessed = false;
@@ -348,7 +349,7 @@ tp-yt-iron-overlay-backdrop,
             });
         }
 
-        log("Removed page ads.", "success");
+        log("success", "Removed page ads.");
     }
 
     // Video Ad Block //
@@ -371,15 +372,15 @@ tp-yt-iron-overlay-backdrop,
 
         // Select lowest video quality //
         const settingsButton = document.querySelector("button.ytp-settings-button");
-        if (!settingsButton) { log("Failed to fetch settings button.", "error"); return; }
+        if (!settingsButton) { log("error", "Failed to fetch settings button."); return; }
         settingsButton.click();
 
         const menuItemLabels = Array.from(document.querySelectorAll(".ytp-menuitem-content"));
         const menuBtns = menuItemLabels.filter(btn => qualityList.some(quality => btn.innerHTML.includes(quality)))
-        if (!menuBtns[0]) { log("Failed to fetch quality settings element.", "error"); return; }
+        if (!menuBtns[0]) { log("error", "Failed to fetch quality settings element."); return; }
 
         const qualityButton = menuBtns[0].parentElement;
-        if (!qualityButton) { log("Failed to fetch quality settings button.", "error"); return; }
+        if (!qualityButton) { log("error", "Failed to fetch quality settings button."); return; }
         qualityButton.click();
 
         const qualityMenu = document.querySelector(".ytp-quality-menu > .ytp-panel-menu");
@@ -388,7 +389,7 @@ tp-yt-iron-overlay-backdrop,
         if (!lowestQuality) return;
 
         lowestQuality.click();
-        log("The main video quality is now set to " + lowestQuality.textContent.trim() + ".", "success");
+        log("success", "The main video quality is now set to " + lowestQuality.textContent.trim() + ".");
 
         return true;
     }
@@ -435,24 +436,24 @@ tp-yt-iron-overlay-backdrop,
 
     function videoAdBlocker(waitAMoment) {
         if (SETTINGS.adBlocker !== true) return;
-        if (isShortsPage()) { log("Shorts found, ad block skipped..."); return; }
-        if (!isVideoPage()) { log("Video page not found, ad block skipped..."); return; }
+        if (isShortsPage()) { log("info", "Shorts found, ad block skipped..."); return; }
+        if (!isVideoPage()) { log("info", "Video page not found, ad block skipped..."); return; }
 
         currentUrl = window.location.href;
-        log("Starting video ad block...");
+        log("info", "Starting video ad block...");
 
         // Mute Main Video //
         if (adBlockInterval) clearInterval(adBlockInterval);
-        log("Running mute handler..."); muteMainVideo();
+        log("info", "Running mute handler..."); muteMainVideo();
 
         // Create API Script //
         if (apiScriptInserted !== true) {
-            log("Inserting API..."); const tag = document.createElement("script"); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag);
+            log("info", "Inserting API..."); const tag = document.createElement("script"); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag);
             apiScriptInserted = true;
         }
 
         // Keybinds for IFrame //
-        log("Creating keybind listener..."); document.addEventListener("keydown", (event) => {
+        log("info", "Creating keybind listener..."); document.addEventListener("keydown", (event) => {
             if (event.isComposing || event.keyCode === 229) return;
             if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA" || event.target.isContentEditable) return; // ignore input fields //
 
@@ -548,30 +549,34 @@ tp-yt-iron-overlay-backdrop,
         });
 
         // Main Handler //
-        log("Starting AD Block...");
+        log("info", "Starting AD Block...");
         const createPlayerFunc = () => {
             if (customVideoInserted === true) return; // inserted //
             if (!videoElement || !playerElement) return; // invalid page //
             if (!window.YT) return; // missing API //
 
             // Reset players //
-            log("Clearing duplicate players and muting main player...");
+            log("info", "Clearing duplicate players and muting main player...");
             clearAllPlayers(true);
             if (customPlayer) customPlayer.remove();
             if (apiPlayer) { apiPlayer.destroy(); apiPlayer = undefined; };
 
             // Get video details //
             const videoData = getYouTubeLinkData(window.location.href)
-            if (videoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
+            if (videoData.ID == "") { log("error", "Failed to fetch video ID."); return; }
 
             // Get saved timestamp //
-            if (videoElement && videoElement.currentTime >= 10 && videoData.params.start === 0) { // 10+ seconds //
-                videoData.params.start = parseInt(videoElement.currentTime.toString().split(".")[0]);
-                log("Start time was set to the saved timestamp.", "success");
+            if (videoElement) {
+                if (currentVideoBlob != videoElement.src && videoElement.currentTime >= 10 && videoData.params.start === 0) { // 10+ seconds //
+                    videoData.params.start = parseInt(videoElement.currentTime.toString().split(".")[0]);
+                    log("success", "Start time was set to the saved timestamp.");
+                }
+
+                currentVideoBlob = videoElement.src;
             }
 
             // Load //
-            log("Video ID: " + videoData.ID);
+            log("info", "Video ID: " + videoData.ID);
             customVideoInserted = true;
 
             customPlayer = document.createElement("div"); // this will turn into an iframe //
@@ -585,7 +590,7 @@ tp-yt-iron-overlay-backdrop,
             customPlayer.style.pointerEvents = "all";
 
             try {
-                log("Inserting Player...");
+                log("info", "Inserting Player...");
                 playerElement.appendChild(customPlayer);
                 apiPlayer = new window.YT.Player("customiframeplayer", {
                     host: "https://www.youtube-nocookie.com",
@@ -596,7 +601,7 @@ tp-yt-iron-overlay-backdrop,
                     events: {
                         onReady: function(event) {
                             event.target.playVideo();
-                            log("AdBlock player successfully loaded!", "success");
+                            log("success", "AdBlock player successfully loaded!");
                             videoLoaded = true;
 
                             customPlayer = document.querySelector("#customiframeplayer");
@@ -619,11 +624,11 @@ tp-yt-iron-overlay-backdrop,
                 p.style.fontSize = "large";
                 p.style.textAlign = "center";
                 p.style.zIndex = "9999";
-                p.innerText = "Failed to load the video player, refreshing the page in 5 seconds...\n" + error.toString();
+                p.innerText = "Failed to load the video player, refreshing the page...\n" + error.toString();
 
                 playerElement.parentElement.parentElement.insertBefore(p, playerElement.parentElement.parentElement.firstChild);
                 clearInterval(adBlockInterval);
-                setTimeout(function() { window.location.reload(); }, 5000);
+                setTimeout(function() { window.location.reload(); }, 1250);
             }
         };
         adBlockInterval = setInterval(createPlayerFunc, waitAMoment === true ? 75 : 10);
@@ -639,16 +644,16 @@ tp-yt-iron-overlay-backdrop,
             if (!target.href.includes("/watch?v=")) return;
 
             const videoData = getYouTubeLinkData(target.href)
-            if (videoData.ID == "") { log("Failed to fetch video ID.", "error"); return; }
+            if (videoData.ID == "") { log("error", "Failed to fetch video ID."); return; }
 
-            log("Seeking to timestamp...", "", videoData.params.start);
+            log("info", "Seeking to timestamp...", videoData.params.start);
             apiPlayer.pauseVideo();
             apiPlayer.seekTo(videoData.params.start);
             apiPlayer.playVideo();
         });
     }
 
-    log("Starting script...", "success");
+    log("success", "Starting script...");
 
     function startMain(waitAMoment) {
         if (isShortsPage()) return;
@@ -669,9 +674,7 @@ tp-yt-iron-overlay-backdrop,
     let isHandlingChange = false;
     function handleUrlChange() {
         if (window.location.href === currentUrl || isHandlingChange) return;
-
-        isHandlingChange = true;
-        log("________________________")
+        log("info", "________________________"); isHandlingChange = true;
 
         // reset all variables and intervals (and set currentUrl) //
         resetEverything();
