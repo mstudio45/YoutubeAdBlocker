@@ -1,6 +1,8 @@
+## v2.0.4:
+   - The old video current time is not applied anymore to the new video
+     
 ## v2.0.3:
    - Refactored the URL handler
-   - Fixed the saved timestamp using the old video's timestamp on URL redirect
 
 ## v2.0.2:
    - Added fullscreen keybind
