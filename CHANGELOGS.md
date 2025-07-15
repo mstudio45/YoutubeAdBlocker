@@ -1,3 +1,6 @@
+## v2.0.5:
+   - Bug fixes
+
 ## v2.0.4:
    - The old video current time is not applied anymore to the new video
      
