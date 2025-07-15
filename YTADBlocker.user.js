@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.5
+// @version      2.0.6
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -557,7 +557,7 @@ tp-yt-iron-overlay-backdrop,
         const createPlayerFunc = () => {
             if (customVideoInserted === true) return; // inserted //
             if (!videoElement || !playerElement) return; // invalid page //
-            if (typeof window.YT === "undefined") return; if(window.YT.loaded !== true) return; // missing API //
+            if (typeof window.YT === "undefined") return; if(window.YT.loaded !== 1) return; // missing API //
 
             // Reset players //
             log("info", "Clearing duplicate players and muting main player...");
