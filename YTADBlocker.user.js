@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.4
+// @version      2.0.5
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -96,7 +96,11 @@
     // Intervals //
     let dataInterval = undefined;
 
-    function resetEverything() {
+    function resetEverything(clearVideoBlob) {
+        if (clearVideoBlob === true && videoElement) videoElement.src = "";
+        videoElement = undefined;
+        playerElement = undefined;
+
         // Update Variables //
         hasUpdated = false;
         hasIgnoredUpdate = false;
@@ -553,7 +557,7 @@ tp-yt-iron-overlay-backdrop,
         const createPlayerFunc = () => {
             if (customVideoInserted === true) return; // inserted //
             if (!videoElement || !playerElement) return; // invalid page //
-            if (!window.YT) return; // missing API //
+            if (typeof window.YT === "undefined" && window.YT.loaded !== true) return; // missing API //
 
             // Reset players //
             log("info", "Clearing duplicate players and muting main player...");
@@ -567,7 +571,7 @@ tp-yt-iron-overlay-backdrop,
 
             // Get saved timestamp //
             if (videoElement) {
-                if (currentVideoBlob != videoElement.src && videoElement.currentTime >= 10 && videoData.params.start === 0) { // 10+ seconds //
+                if (currentVideoBlob !== videoElement.src && videoElement.currentTime >= 10 && videoData.params.start === 0) { // 10+ seconds //
                     videoData.params.start = parseInt(videoElement.currentTime.toString().split(".")[0]);
                     log("success", "Start time was set to the saved timestamp.");
                 }
@@ -674,15 +678,16 @@ tp-yt-iron-overlay-backdrop,
     let isHandlingChange = false;
     function handleUrlChange() {
         if (window.location.href === currentUrl || isHandlingChange) return;
-        log("info", "________________________"); isHandlingChange = true;
+        log("info", "________________________");
+        isHandlingChange = true;
 
         // reset all variables and intervals (and set currentUrl) //
-        resetEverything();
+        resetEverything(true);
 
         // restart all functions //
         clearAllPlayers(true);
         startMain(true);
-        setTimeout(function() { isHandlingChange = false; }, 25);
+        setTimeout(function() { isHandlingChange = false; }, 50);
     }
 
     // detect URL changes //
