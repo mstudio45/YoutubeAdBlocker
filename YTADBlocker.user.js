@@ -557,7 +557,7 @@ tp-yt-iron-overlay-backdrop,
         const createPlayerFunc = () => {
             if (customVideoInserted === true) return; // inserted //
             if (!videoElement || !playerElement) return; // invalid page //
-            if (typeof window.YT === "undefined" && window.YT.loaded !== true) return; // missing API //
+            if (typeof window.YT === "undefined") return; if(window.YT.loaded !== true) return; // missing API //
 
             // Reset players //
             log("info", "Clearing duplicate players and muting main player...");
