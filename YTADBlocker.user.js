@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.6
+// @version      2.0.7
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -92,6 +92,7 @@
 
     let adBlockInterval = undefined;
     let muteInterval = undefined;
+    let muteButtonInterval = undefined;
 
     // Intervals //
     let dataInterval = undefined;
@@ -401,6 +402,31 @@ tp-yt-iron-overlay-backdrop,
     function muteMainVideo() {
         if (SETTINGS.adBlocker !== true) return;
         if (muteInterval) clearInterval(muteInterval);
+        if (muteButtonInterval) clearInterval(muteButtonInterval);
+
+        let mutedIntervalAmount = 0;
+        const muteVideoUsingButton = () => {
+            if (!videoElement || !playerElement) return;
+
+            const muteButton = document.querySelector(".ytp-mute-button");
+            if (!muteButton) return;
+
+            const volumeSlider = document.querySelector(".ytp-volume-slider-handle");
+            if (!volumeSlider) return;
+
+            const isMuted = volumeSlider.style.left === "0px";
+            if (isMuted) {
+                mutedIntervalAmount = mutedIntervalAmount + 1;
+                if (mutedIntervalAmount > 2) {
+                    log("success", "Video muted with the button element.");
+                    clearInterval(muteButtonInterval)
+                    return;
+                }
+            } else {
+                muteButton.click();
+            }
+        }
+        muteButtonInterval = setInterval(muteVideoUsingButton, 500);
 
         const muteVideo = () => {
             if (!videoElement) return;
@@ -436,6 +462,33 @@ tp-yt-iron-overlay-backdrop,
         };
         setTimeout(muteVideo, 1);
         muteInterval = setInterval(muteVideo, 500);
+    }
+
+    function isVideoElementLoaded(videoElement, callback) {
+        // event listeners //
+        function checkReady() {
+            if (videoElement.readyState >= 3) { // HAVE_FUTURE_DATA //
+                callback(true);
+                cleanup();
+            }
+        }
+
+        function onError() {
+            callback(false);
+            cleanup();
+        }
+
+        // check //
+        function cleanup() {
+            videoElement.removeEventListener("canplay", checkReady);
+            videoElement.removeEventListener("loadeddata", checkReady);
+            videoElement.removeEventListener("error", onError);
+        }
+
+        videoElement.addEventListener("canplay", checkReady);
+        videoElement.addEventListener("loadeddata", checkReady);
+        videoElement.addEventListener("error", onError);
+        checkReady();
     }
 
     function videoAdBlocker(waitAMoment) {
@@ -554,6 +607,25 @@ tp-yt-iron-overlay-backdrop,
 
         // Main Handler //
         log("info", "Starting AD Block...");
+        const showErrorText = (message, skipAlert, debrisTime) => {
+            if (!playerElement) {
+                if (skipAlert !== true) alert(message.toString());
+                return;
+            }
+
+            const textElement = document.createElement("p");
+            textElement.id = "errorcode";
+            textElement.style.position = "relative";
+            textElement.style.color = "white";
+            textElement.style.fontSize = "large";
+            textElement.style.textAlign = "center";
+            textElement.style.zIndex = "9999";
+            textElement.innerText = message.toString();
+
+            playerElement.parentElement.parentElement.insertBefore(textElement, playerElement.parentElement.parentElement.firstChild);
+            setTimeout(function() { textElement.remove(); }, debrisTime);
+        }
+
         const createPlayerFunc = () => {
             if (customVideoInserted === true) return; // inserted //
             if (!videoElement || !playerElement) return; // invalid page //
@@ -594,8 +666,14 @@ tp-yt-iron-overlay-backdrop,
             customPlayer.style.pointerEvents = "all";
 
             try {
+                // Change the interval time //
+                clearInterval(adBlockInterval);
+                adBlockInterval = setInterval(createPlayerFunc, 1500);
+
+                // Insert Player //
                 log("info", "Inserting Player...");
                 playerElement.appendChild(customPlayer);
+
                 apiPlayer = new window.YT.Player("customiframeplayer", {
                     host: "https://www.youtube-nocookie.com",
 
@@ -604,6 +682,7 @@ tp-yt-iron-overlay-backdrop,
 
                     events: {
                         onReady: function(event) {
+                            // Play the video //
                             event.target.playVideo();
                             log("success", "AdBlock player successfully loaded!");
                             videoLoaded = true;
@@ -611,31 +690,57 @@ tp-yt-iron-overlay-backdrop,
                             customPlayer = document.querySelector("#customiframeplayer");
                             customPlayer.allowFullscreen = true; // works for some browsers //
                             customPlayer.setAttribute('allowfullscreen', ''); // important for others //
+                        },
+
+                        onError: function(event) {
+                            switch (event.data) {
+                                case 2:
+                                    showErrorText("Invalid Video ID.", false, 9e9);
+                                    break;
+                                case 5:
+                                    showErrorText("The requested content cannot be played in an HTML5 player.", false, 9e9);
+                                    break;
+                                case 100:
+                                    showErrorText("Video not found or removed.", false, 9e9);
+                                    break;
+                                case 101:
+                                case 150:
+                                    showErrorText("The video owner has restricted playback.", false, 9e9);
+                                    break;
+
+                                default:
+                                    showErrorText("Failed to load the video player, retrying...", true, 2500);
+
+                                    if (customPlayer) customPlayer.remove()
+                                    customVideoInserted = false;
+                                    videoLoaded = false;
+                                    break;
+                            }
                         }
                     }
                 });
-
-                // Change the interval time //
-                clearInterval(adBlockInterval);
-                adBlockInterval = setInterval(createPlayerFunc, 1500);
             } catch (error) {
                 videoLoaded = true;
-
-                const p = document.createElement("p");
-                p.id = "errorcode";
-                p.style.position = "relative";
-                p.style.color = "white";
-                p.style.fontSize = "large";
-                p.style.textAlign = "center";
-                p.style.zIndex = "9999";
-                p.innerText = "Failed to load the video player, refreshing the page...\n" + error.toString();
-
-                playerElement.parentElement.parentElement.insertBefore(p, playerElement.parentElement.parentElement.firstChild);
+                showErrorText("Failed to load the video player, refreshing the page...\n" + error.toString(), false, 5000);
                 clearInterval(adBlockInterval);
-                setTimeout(function() { window.location.reload(); }, 1250);
+                setTimeout(function() { window.location.reload(); }, 2500);
             }
         };
-        adBlockInterval = setInterval(createPlayerFunc, waitAMoment === true ? 75 : 10);
+
+        const waitForVideoElement = () => {
+            if (!videoElement || !playerElement) { setTimeout(waitForVideoElement, 100); return; }
+
+            isVideoElementLoaded(videoElement, (isReady) => {
+                if (isReady) {
+                    log("info", "Video element has loaded!")
+                    adBlockInterval = setInterval(createPlayerFunc, 150);
+                } else {
+                    log("warning", "Video element didn't load properly.")
+                    setTimeout(waitForVideoElement, 100);
+                }
+            });
+        };
+        setTimeout(waitForVideoElement, 100);
     }
 
     // Timestamp fixer //
@@ -659,7 +764,7 @@ tp-yt-iron-overlay-backdrop,
 
     log("success", "Starting script...");
 
-    function startMain(waitAMoment) {
+    function startMain() {
         if (isShortsPage()) return;
 
         runDataInterval(); // Video Data handler //
@@ -668,7 +773,7 @@ tp-yt-iron-overlay-backdrop,
         setTimeout(removePageAds, 1);
 
         timestampFixer(); // Comment timestamp fix //
-        videoAdBlocker(waitAMoment); // Main AdBlock //
+        videoAdBlocker(); // Main AdBlock //
     }
 
     startMain();
@@ -686,7 +791,7 @@ tp-yt-iron-overlay-backdrop,
 
         // restart all functions //
         clearAllPlayers(true);
-        startMain(true);
+        startMain();
         setTimeout(function() { isHandlingChange = false; }, 50);
     }
 
