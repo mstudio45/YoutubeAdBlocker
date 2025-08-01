@@ -1,3 +1,6 @@
+## v2.0.8:
+   - Fixed some issues with the new initialization system
+
 ## v2.0.7:
    - Improved custom video player initialization
    - Added an fallback for muting the main video player
