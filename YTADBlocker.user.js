@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.7
+// @version      2.0.8
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -87,7 +87,6 @@
     let customPlayer = undefined;
 
     let customVideoInserted = false;
-    let apiScriptInserted = false;
     let videoLoaded = false;
 
     let adBlockInterval = undefined;
@@ -115,7 +114,6 @@
         customPlayer = undefined;
 
         customVideoInserted = false;
-        apiScriptInserted = false;
         videoLoaded = false;
 
         if (adBlockInterval) clearInterval(adBlockInterval); adBlockInterval = undefined;
@@ -185,6 +183,11 @@
     ///////////////////////////////////////////////////////////////////////////////////////////
 
     // Functions //
+    function getParameters() { return new URL(window.location.href).searchParams; }
+    function isShortsPage() { return window.location.href.includes("/shorts/") }
+    function isVideoPage() { return window.location.href.includes(".com/watch") || window.location.href.includes("/clip"); }
+    function isAdPlaying() { return document.querySelector("div.ad-showing") !== null; }
+
     function clearAllPlayers(fakeVideoOnly) {
         if (isShortsPage()) fakeVideoOnly = true;
 
@@ -197,10 +200,10 @@
             } catch (e) { log("error", "Error:", elements, e) }
         })
     }
+
     function getYouTubeLinkData(urlString) {
         const DATA = {
             ID: "",
-            // playlist: false,
             params: {
                 start: 0,
 
@@ -219,10 +222,11 @@
             DATA.ID = urlParams.get("v");
         } else {
             const paths = url.pathname.split("/");
-            const liveIndex = paths.indexOf("live")
+            const liveIndex = paths.indexOf("live");
 
             if (liveIndex !== -1 && liveIndex + 1 < paths.length) DATA.ID = paths[liveIndex + 1];
         }
+
         if (DATA.ID == "") return DATA;
 
         // Handle Start time //
@@ -233,14 +237,6 @@
         }
 
         return DATA;
-    }
-
-    function getParameters() { return new URL(window.location.href).searchParams; }
-    function isShortsPage() { return window.location.href.includes("/shorts/") }
-    function isVideoPage() { return window.location.href.includes(".com/watch") || window.location.href.includes("/clip"); }
-    function isAdPlaying() {
-        if (document.querySelector("div.ad-showing")) return true;
-        return false;
     }
 
     // PopUp Remover //
@@ -358,14 +354,28 @@ tp-yt-iron-overlay-backdrop,
     }
 
     // Video Ad Block //
+    function getPlayerContainerFromVideo(element) {
+        while (element && element !== document) {
+            if (element.id === "player") {
+                return element;
+            }
+
+            element = element.parentElement;
+        }
+
+        return null;
+    }
+
     function runDataInterval() {
         if (dataInterval) clearInterval(dataInterval);
 
         const findVideo = () => {
-            let tempVideoElement = document.querySelector("video");
-            if (tempVideoElement && (tempVideoElement.src || tempVideoElement.className.indexOf("stream") !== -1)) videoElement = tempVideoElement;
+            let tempVideoElement = Array.from(document.querySelectorAll("video")).find(
+                video => video.hasAttribute("src") && video.getAttribute("src").trim() !== ""
+            );
+            if (tempVideoElement && tempVideoElement.className.indexOf("stream") !== -1) videoElement = tempVideoElement;
 
-            let tempPlayerElement = document.querySelector("#player");
+            let tempPlayerElement = getPlayerContainerFromVideo(tempVideoElement); // document.querySelector("#player");
             if (tempPlayerElement && tempPlayerElement.className.indexOf("skeleton") === -1) playerElement = tempPlayerElement;
         };
         setTimeout(findVideo, 1);
@@ -404,6 +414,7 @@ tp-yt-iron-overlay-backdrop,
         if (muteInterval) clearInterval(muteInterval);
         if (muteButtonInterval) clearInterval(muteButtonInterval);
 
+        // Click mute button to remove random noise when ADs start playing //
         let mutedIntervalAmount = 0;
         const muteVideoUsingButton = () => {
             if (!videoElement || !playerElement) return;
@@ -428,6 +439,7 @@ tp-yt-iron-overlay-backdrop,
         }
         muteButtonInterval = setInterval(muteVideoUsingButton, 500);
 
+        // Mute by code //
         const muteVideo = () => {
             if (!videoElement) return;
 
@@ -464,178 +476,168 @@ tp-yt-iron-overlay-backdrop,
         muteInterval = setInterval(muteVideo, 500);
     }
 
-    function isVideoElementLoaded(videoElement, callback) {
-        // event listeners //
-        function checkReady() {
-            if (videoElement.readyState >= 3) { // HAVE_FUTURE_DATA //
-                callback(true);
-                cleanup();
-            }
+    function keyboardController(event) {
+        if (event.isComposing || event.keyCode === 229) return;
+        if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA" || event.target.isContentEditable) return; // ignore input fields //
+
+        // ignore keys when loading the player //
+        const key = event.key.toLowerCase();
+        if (key === "f") { event.preventDefault(); };
+
+        if (!customPlayer && (videoLoaded === true || customVideoInserted === true)) { event.preventDefault(); return; }
+
+        // https://support.google.com/youtube/answer/7631406?hl=en //
+        // You can load and unload captions only once so the "c" shortcut is not possible //
+        // Certain stuff is ignored because it's not avalaible in the iframe //
+        switch (key) {
+            case "f":
+                event.preventDefault();
+                if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+                    if (customPlayer.requestFullscreen) {
+                        customPlayer.requestFullscreen();
+                    } else if (customPlayer.webkitRequestFullscreen) {
+                        customPlayer.webkitRequestFullscreen();
+                    } else if (customPlayer.msRequestFullscreen) {
+                        customPlayer.msRequestFullscreen();
+                    }
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    } else if (document.msExitFullscreen) {
+                        document.msExitFullscreen();
+                    }
+                }
+                break;
+
+                // Play/Pause //
+            case " ": case "k":
+                event.preventDefault();
+                apiPlayer.getPlayerState() === 1 ? apiPlayer.pauseVideo() : apiPlayer.playVideo();
+                break;
+
+                // Mute/unmute the video //
+            case "m":
+                event.preventDefault();
+                apiPlayer.isMuted() ? apiPlayer.unMute() : apiPlayer.mute();
+                break;
+
+                // Seek backward/forward 5 seconds //
+            case "arrowright":
+                event.preventDefault();
+                apiPlayer.seekTo(apiPlayer.getCurrentTime() + 5, true);
+                break;
+            case "arrowleft":
+                event.preventDefault();
+                apiPlayer.seekTo(apiPlayer.getCurrentTime() - 5, true);
+                break;
+
+                // Increase/Decrease volume 5% //
+            case "arrowup":
+                event.preventDefault();
+                apiPlayer.setVolume(apiPlayer.getVolume() + 5, true);
+                break;
+            case "arrowdown":
+                event.preventDefault();
+                apiPlayer.setVolume(apiPlayer.getVolume() - 5, true);
+                break;
+
+                // Seek backward/forward 10 seconds //
+            case "l":
+                event.preventDefault();
+                apiPlayer.seekTo(apiPlayer.getCurrentTime() + 10, true);
+                break;
+            case "j":
+                event.preventDefault();
+                apiPlayer.seekTo(apiPlayer.getCurrentTime() - 10, true);
+                break;
+
+                // Seek to next/previous frame (60 fps) //
+            case ".":
+                event.preventDefault();
+                apiPlayer.seekTo(apiPlayer.getCurrentTime() + (1 / 60));
+                break;
+            case ",":
+                event.preventDefault();
+                apiPlayer.seekTo(apiPlayer.getCurrentTime() - (1 / 60));
+                break;
+
+                // Seek to 0% to 90% of the video //
+            case "0": case "1": case "2": case "3": case "4": case "5": case "6": case "7": case "8": case "9":
+                event.preventDefault();
+                apiPlayer.seekTo(
+                    ((parseInt(event.key) * 10) / 100) * apiPlayer.getDuration(), true
+                );
+                break;
+        }
+    }
+
+    function showErrorText(message, skipAlert, debrisTime) {
+        if (!playerElement) {
+            if (skipAlert !== true) alert(message.toString());
+            return;
         }
 
-        function onError() {
-            callback(false);
-            cleanup();
-        }
+        const textElement = document.createElement("p");
+        textElement.id = "errorcode";
+        textElement.style.position = "relative";
+        textElement.style.color = "white";
+        textElement.style.fontSize = "large";
+        textElement.style.textAlign = "center";
+        textElement.style.zIndex = "9999";
+        textElement.innerText = message.toString();
 
-        // check //
-        function cleanup() {
-            videoElement.removeEventListener("canplay", checkReady);
-            videoElement.removeEventListener("loadeddata", checkReady);
-            videoElement.removeEventListener("error", onError);
-        }
+        playerElement.parentElement.parentElement.insertBefore(textElement, playerElement.parentElement.parentElement.firstChild);
+        setTimeout(function() { textElement.remove(); }, debrisTime);
+    }
 
-        videoElement.addEventListener("canplay", checkReady);
-        videoElement.addEventListener("loadeddata", checkReady);
-        videoElement.addEventListener("error", onError);
-        checkReady();
+    function clearErrorText() {
+        document.querySelectorAll("#errortext").forEach((element) => element.remove());
+    }
+
+    function destroyCustomPlayer() {
+        customVideoInserted = false;
+
+        if (customPlayer) { customPlayer.remove(); customPlayer = undefined; };
+        if (apiPlayer) { apiPlayer.destroy(); apiPlayer = undefined; };
     }
 
     function videoAdBlocker(waitAMoment) {
-        if (SETTINGS.adBlocker !== true) return;
-        if (isShortsPage()) { log("info", "Shorts found, ad block skipped..."); return; }
+        if (SETTINGS.adBlocker !== true) { log("info", "Ad block is not enabled."); return; };
+        if (isShortsPage()) { log("info", "Shorts page found, ad block skipped..."); return; }
         if (!isVideoPage()) { log("info", "Video page not found, ad block skipped..."); return; }
 
-        currentUrl = window.location.href;
         log("info", "Starting video ad block...");
+        currentUrl = window.location.href;
 
         // Mute Main Video //
         if (adBlockInterval) clearInterval(adBlockInterval);
         log("info", "Running mute handler..."); muteMainVideo();
 
         // Create API Script //
-        if (apiScriptInserted !== true) {
-            log("info", "Inserting API..."); const tag = document.createElement("script"); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag);
-            apiScriptInserted = true;
+        if (typeof window.YT === "undefined") {
+            log("info", "Inserting API...");
+            const tag = document.createElement("script"); tag.src = "https://www.youtube.com/iframe_api";
+            document.head.appendChild(tag);
         }
 
         // Keybinds for IFrame //
-        log("info", "Creating keybind listener..."); document.addEventListener("keydown", (event) => {
-            if (event.isComposing || event.keyCode === 229) return;
-            if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA" || event.target.isContentEditable) return; // ignore input fields //
-
-            // ignore keys when loading the player //
-            const key = event.key.toLowerCase();
-            if (key === "f") { event.preventDefault(); }; if (!customPlayer && (videoLoaded === true || customVideoInserted === true)) { event.preventDefault(); return; }
-
-            // https://support.google.com/youtube/answer/7631406?hl=en //
-            // You can load and unload captions only once so the "c" shortcut is not possible //
-            // Certain stuff is ignored because it's not avalaible in the iframe //
-            switch (key) {
-                case "f":
-                    event.preventDefault();
-                    if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
-                        if (customPlayer.requestFullscreen) {
-                            customPlayer.requestFullscreen();
-                        } else if (customPlayer.webkitRequestFullscreen) {
-                            customPlayer.webkitRequestFullscreen();
-                        } else if (customPlayer.msRequestFullscreen) {
-                            customPlayer.msRequestFullscreen();
-                        }
-                    } else {
-                        if (document.exitFullscreen) {
-                            document.exitFullscreen();
-                        } else if (document.webkitExitFullscreen) {
-                            document.webkitExitFullscreen();
-                        } else if (document.msExitFullscreen) {
-                            document.msExitFullscreen();
-                        }
-                    }
-                    break;
-
-                    // Play/Pause //
-                case " ": case "k":
-                    event.preventDefault();
-                    apiPlayer.getPlayerState() === 1 ? apiPlayer.pauseVideo() : apiPlayer.playVideo();
-                    break;
-
-                    // Mute/unmute the video //
-                case "m":
-                    event.preventDefault();
-                    apiPlayer.isMuted() ? apiPlayer.unMute() : apiPlayer.mute();
-                    break;
-
-                    // Seek backward/forward 5 seconds //
-                case "arrowright":
-                    event.preventDefault();
-                    apiPlayer.seekTo(apiPlayer.getCurrentTime() + 5, true);
-                    break;
-                case "arrowleft":
-                    event.preventDefault();
-                    apiPlayer.seekTo(apiPlayer.getCurrentTime() - 5, true);
-                    break;
-
-                    // Increase/Decrease volume 5% //
-                case "arrowup":
-                    event.preventDefault();
-                    apiPlayer.setVolume(apiPlayer.getVolume() + 5, true);
-                    break;
-                case "arrowdown":
-                    event.preventDefault();
-                    apiPlayer.setVolume(apiPlayer.getVolume() - 5, true);
-                    break;
-
-                    // Seek backward/forward 10 seconds //
-                case "l":
-                    event.preventDefault();
-                    apiPlayer.seekTo(apiPlayer.getCurrentTime() + 10, true);
-                    break;
-                case "j":
-                    event.preventDefault();
-                    apiPlayer.seekTo(apiPlayer.getCurrentTime() - 10, true);
-                    break;
-
-                    // Seek to next/previous frame (60 fps) //
-                case ".":
-                    event.preventDefault();
-                    apiPlayer.seekTo(apiPlayer.getCurrentTime() + (1 / 60));
-                    break;
-                case ",":
-                    event.preventDefault();
-                    apiPlayer.seekTo(apiPlayer.getCurrentTime() - (1 / 60));
-                    break;
-
-                    // Seek to 0% to 90% of the video //
-                case "0": case "1": case "2": case "3": case "4": case "5": case "6": case "7": case "8": case "9":
-                    event.preventDefault();
-                    apiPlayer.seekTo(
-                        ((parseInt(event.key) * 10) / 100) * apiPlayer.getDuration(), true
-                    );
-                    break;
-            }
-        });
+        document.removeEventListener("keydown", keyboardController);
+        log("info", "Creating keybind listener..."); document.addEventListener("keydown", keyboardController);
 
         // Main Handler //
         log("info", "Starting AD Block...");
-        const showErrorText = (message, skipAlert, debrisTime) => {
-            if (!playerElement) {
-                if (skipAlert !== true) alert(message.toString());
-                return;
-            }
-
-            const textElement = document.createElement("p");
-            textElement.id = "errorcode";
-            textElement.style.position = "relative";
-            textElement.style.color = "white";
-            textElement.style.fontSize = "large";
-            textElement.style.textAlign = "center";
-            textElement.style.zIndex = "9999";
-            textElement.innerText = message.toString();
-
-            playerElement.parentElement.parentElement.insertBefore(textElement, playerElement.parentElement.parentElement.firstChild);
-            setTimeout(function() { textElement.remove(); }, debrisTime);
-        }
-
         const createPlayerFunc = () => {
             if (customVideoInserted === true) return; // inserted //
             if (!videoElement || !playerElement) return; // invalid page //
             if (typeof window.YT === "undefined") return; if(window.YT.loaded !== 1) return; // missing API //
+            if (videoElement.readyState < 3) return; // video hasn't loaded properly yet //
 
             // Reset players //
             log("info", "Clearing duplicate players and muting main player...");
             clearAllPlayers(true);
-            if (customPlayer) customPlayer.remove();
-            if (apiPlayer) { apiPlayer.destroy(); apiPlayer = undefined; };
+            destroyCustomPlayer();
 
             // Get video details //
             const videoData = getYouTubeLinkData(window.location.href)
@@ -666,13 +668,12 @@ tp-yt-iron-overlay-backdrop,
             customPlayer.style.pointerEvents = "all";
 
             try {
-                // Change the interval time //
-                clearInterval(adBlockInterval);
-                adBlockInterval = setInterval(createPlayerFunc, 1500);
-
                 // Insert Player //
                 log("info", "Inserting Player...");
                 playerElement.appendChild(customPlayer);
+
+                clearInterval(adBlockInterval)
+                adBlockInterval = setInterval(createPlayerFunc, 1000);
 
                 apiPlayer = new window.YT.Player("customiframeplayer", {
                     host: "https://www.youtube-nocookie.com",
@@ -682,14 +683,16 @@ tp-yt-iron-overlay-backdrop,
 
                     events: {
                         onReady: function(event) {
-                            // Play the video //
-                            event.target.playVideo();
                             log("success", "AdBlock player successfully loaded!");
                             videoLoaded = true;
 
+                            // Play the video //
+                            event.target.playVideo();
+
+                            // setup fullscreen //
                             customPlayer = document.querySelector("#customiframeplayer");
                             customPlayer.allowFullscreen = true; // works for some browsers //
-                            customPlayer.setAttribute('allowfullscreen', ''); // important for others //
+                            customPlayer.setAttribute("allowfullscreen", ""); // important for others //
                         },
 
                         onError: function(event) {
@@ -697,23 +700,24 @@ tp-yt-iron-overlay-backdrop,
                                 case 2:
                                     showErrorText("Invalid Video ID.", false, 9e9);
                                     break;
+
                                 case 5:
                                     showErrorText("The requested content cannot be played in an HTML5 player.", false, 9e9);
                                     break;
+
                                 case 100:
                                     showErrorText("Video not found or removed.", false, 9e9);
                                     break;
+
                                 case 101:
                                 case 150:
                                     showErrorText("The video owner has restricted playback.", false, 9e9);
                                     break;
 
                                 default:
-                                    showErrorText("Failed to load the video player, retrying...", true, 2500);
+                                    showErrorText("Failed to load the video player, retrying... (" + event.data.toString() + ")", true, 1000);
 
-                                    if (customPlayer) customPlayer.remove()
-                                    customVideoInserted = false;
-                                    videoLoaded = false;
+                                    destroyCustomPlayer(); customVideoInserted = false; videoLoaded = false;
                                     break;
                             }
                         }
@@ -727,20 +731,7 @@ tp-yt-iron-overlay-backdrop,
             }
         };
 
-        const waitForVideoElement = () => {
-            if (!videoElement || !playerElement) { setTimeout(waitForVideoElement, 100); return; }
-
-            isVideoElementLoaded(videoElement, (isReady) => {
-                if (isReady) {
-                    log("info", "Video element has loaded!")
-                    adBlockInterval = setInterval(createPlayerFunc, 150);
-                } else {
-                    log("warning", "Video element didn't load properly.")
-                    setTimeout(waitForVideoElement, 100);
-                }
-            });
-        };
-        setTimeout(waitForVideoElement, 100);
+        adBlockInterval = setInterval(createPlayerFunc, 100);
     }
 
     // Timestamp fixer //
@@ -765,18 +756,18 @@ tp-yt-iron-overlay-backdrop,
     log("success", "Starting script...");
 
     function startMain() {
-        if (isShortsPage()) return;
-
-        runDataInterval(); // Video Data handler //
-
+        clearErrorText();
         setTimeout(popupRemover, 1);
         setTimeout(removePageAds, 1);
 
+        if (isShortsPage()) return;
+
+        runDataInterval(); // Video Data handler //
         timestampFixer(); // Comment timestamp fix //
         videoAdBlocker(); // Main AdBlock //
     }
 
-    startMain();
+    setTimeout(startMain, 100);
     updateChecker();
 
     // URL update handler //
@@ -792,7 +783,7 @@ tp-yt-iron-overlay-backdrop,
         // restart all functions //
         clearAllPlayers(true);
         startMain();
-        setTimeout(function() { isHandlingChange = false; }, 50);
+        setTimeout(function() { isHandlingChange = false; }, 100);
     }
 
     // detect URL changes //
