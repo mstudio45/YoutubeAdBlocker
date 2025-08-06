@@ -2,8 +2,9 @@
 An YouTube AD Blocker for Tampermonkey. Originated from [TheRealJoelmatic's Remove Adblock Thing](https://github.com/TheRealJoelmatic/RemoveAdblockThing)
 
 > [!WARNING]
-> The AD Block does not work anymore. This Userscript now just speeds up the ad and mutes it instead. <br />
-> It still does remove the AD elements.
+> The **Ad Block** feature no longer fully removes ads.  
+> This userscript now **mutes** the ad and **speeds it up**, but **does not block** it entirely.  
+> However, it **still removes the ad elements** from the page layout.
 
 ## Installation
 
