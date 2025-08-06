@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.8
+// @version      2.0.9
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -34,9 +34,12 @@
         updateCheck: true,
 
         // YouTube //
-        adBlocker: true,
         removePageAds: true,
-        removePopUps: true
+        removePopUps: true,
+
+                // adBlocker: false, - Patched
+        adFastForward: true,
+        adPlaybackRate: 5
     }
 
     function log(level, ...args) {
@@ -89,7 +92,8 @@
     let customVideoInserted = false;
     let videoLoaded = false;
 
-    let adBlockInterval = undefined;
+    // let adBlockInterval = undefined;
+    let adFastForwardInterval = undefined;
     let muteInterval = undefined;
     let muteButtonInterval = undefined;
 
@@ -116,7 +120,8 @@
         customVideoInserted = false;
         videoLoaded = false;
 
-        if (adBlockInterval) clearInterval(adBlockInterval); adBlockInterval = undefined;
+        // if (adBlockInterval) clearInterval(adBlockInterval); adBlockInterval = undefined;
+        if (adFastForwardInterval) clearInterval(adFastForwardInterval); adFastForwardInterval = undefined;
         if (muteInterval) clearInterval(muteInterval); muteInterval = undefined;
 
         // Intervals //
@@ -382,7 +387,7 @@ tp-yt-iron-overlay-backdrop,
         dataInterval = setInterval(findVideo, 100);
     }
 
-    function setToLowestQuality() {
+    /*function setToLowestQuality() {
         if (isAdPlaying()) return;
 
         // Select lowest video quality //
@@ -751,20 +756,49 @@ tp-yt-iron-overlay-backdrop,
             apiPlayer.seekTo(videoData.params.start);
             apiPlayer.playVideo();
         });
+    }*/
+
+    function videoFastForward() {
+        if (SETTINGS.adFastForward !== true) { log("info", "Ad FastForward is not enabled."); return; };
+        if (isShortsPage()) { log("info", "Shorts page found, ad FastForward skipped..."); return; }
+        if (!isVideoPage()) { log("info", "Video page not found, ad FastForward skipped..."); return; }
+
+        log("info", "Starting video ad FastForward...");
+        currentUrl = window.location.href;
+
+        // Main Handler //
+        log("info", "Starting AD FastForward...");
+        if (adFastForwardInterval) clearInterval(adFastForwardInterval);
+
+        const adFastForward = () => {
+            if (!videoElement || !playerElement) return; // invalid page //
+            if (videoElement.readyState < 3) return; // video hasn't loaded properly yet //
+
+            if (isAdPlaying()) {
+                videoElement.muted = true; videoElement.volume = 0;
+                videoElement.playbackRate = SETTINGS.adPlaybackRate;
+            } else {
+                if (videoElement.muted == true) { videoElement.muted = false; videoElement.volume = 1; }
+                if (videoElement.playbackRate > 2) videoElement.playbackRate = 1;
+            }
+        };
+
+        adFastForwardInterval = setInterval(adFastForward, 100);
     }
 
     log("success", "Starting script...");
 
     function startMain() {
-        clearErrorText();
+        // clearErrorText();
         setTimeout(popupRemover, 1);
         setTimeout(removePageAds, 1);
 
         if (isShortsPage()) return;
 
         runDataInterval(); // Video Data handler //
-        timestampFixer(); // Comment timestamp fix //
-        videoAdBlocker(); // Main AdBlock //
+        videoFastForward();
+        // timestampFixer(); // Comment timestamp fix //
+        // videoAdBlocker(); // Main AdBlock //
     }
 
     setTimeout(startMain, 100);
