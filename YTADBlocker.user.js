@@ -780,17 +780,15 @@ tp-yt-iron-overlay-backdrop,
                 videoElement.playbackRate = SETTINGS.adPlaybackRate;
 
                 if (SETTINGS.hideAd) {
-                    if (videoElement.parentElement) {
-                        videoElement.parentElement.style.display = "none";
-                    }
+                    videoElement.style.display = "none";
+                    if (videoElement.parentElement) videoElement.parentElement.style.display = "none";
                 }
             } else {
                 if (videoElement.muted == true) { videoElement.muted = false; videoElement.volume = 1; }
                 if (videoElement.playbackRate > 2) videoElement.playbackRate = 1;
                 if (SETTINGS.hideAd) {
-                    if (videoElement.parentElement) {
-                        if (videoElement.parentElement.style.display == "none") videoElement.parentElement.style.display = "";
-                    }
+                    if (videoElement.style.display == "none") videoElement.style.display = "";
+                    if (videoElement.parentElement && videoElement.parentElement.style.display == "none") videoElement.parentElement.style.display = "";
                 }
             }
         };
