@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.0.9
+// @version      2.1.0
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -37,8 +37,9 @@
         removePageAds: true,
         removePopUps: true,
 
-                // adBlocker: false, - Patched
+        // adBlocker: false, - Patched
         adFastForward: true,
+        hideAd: true, // requires adFastForward
         adPlaybackRate: 5
     }
 
@@ -777,9 +778,20 @@ tp-yt-iron-overlay-backdrop,
             if (isAdPlaying()) {
                 videoElement.muted = true; videoElement.volume = 0;
                 videoElement.playbackRate = SETTINGS.adPlaybackRate;
+
+                if (SETTINGS.hideAd) {
+                    if (videoElement.parentElement) {
+                        videoElement.parentElement.style.display = "none";
+                    }
+                }
             } else {
                 if (videoElement.muted == true) { videoElement.muted = false; videoElement.volume = 1; }
                 if (videoElement.playbackRate > 2) videoElement.playbackRate = 1;
+                if (SETTINGS.hideAd) {
+                    if (videoElement.parentElement) {
+                        if (videoElement.parentElement.style.display == "none") videoElement.parentElement.style.display = "";
+                    }
+                }
             }
         };
 
