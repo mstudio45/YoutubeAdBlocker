@@ -786,6 +786,7 @@ tp-yt-iron-overlay-backdrop,
             } else {
                 if (videoElement.muted == true) { videoElement.muted = false; videoElement.volume = 1; }
                 if (videoElement.playbackRate > 2) videoElement.playbackRate = 1;
+
                 if (SETTINGS.hideAd) {
                     if (videoElement.style.display == "none") videoElement.style.display = "";
                     if (videoElement.parentElement && videoElement.parentElement.style.display == "none") videoElement.parentElement.style.display = "";
