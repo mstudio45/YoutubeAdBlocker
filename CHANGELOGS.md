@@ -1,3 +1,6 @@
+## v2.1.0:
+   - Added and option "hideAd" that will show a black screen instead of the AD (good if you don't want to see slop AI brainrot ADs)
+
 ## v2.0.9:
    - Removed AdBlocker
    - Added Ad FastForward
