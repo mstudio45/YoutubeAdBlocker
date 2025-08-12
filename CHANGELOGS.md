@@ -1,3 +1,6 @@
+## v2.1.1
+   - For 5 seconds on the first AD will only be muted due to YouTube video player being deleted if its hidden or its playback rate is higher than 1
+
 ## v2.1.0:
    - Added and option "hideAd" that will show a black screen instead of the AD (good if you don't want to see slop AI brainrot ADs)
 
