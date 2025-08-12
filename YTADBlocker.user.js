@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.1.1
+// @version      2.1.2
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -72,7 +72,7 @@
     // Static Variables //
     const qualityList = ["Auto", "144p", "240p", "360p", "480p", "720p", "1080p", "1440p", "2160p"];
 
-    let pageJustLoaded = true;
+    let lastPageLoadTime = Date.now();
 
     // Update Variables //
     let hasUpdated = false;
@@ -761,6 +761,10 @@ tp-yt-iron-overlay-backdrop,
         });
     }*/
 
+    function isPageLoading() {
+        return Date.now() - lastPageLoadTime < 5000;
+    }
+
     function videoFastForward() {
         if (SETTINGS.adFastForward !== true) { log("info", "Ad FastForward is not enabled."); return; };
         if (isShortsPage()) { log("info", "Shorts page found, ad FastForward skipped..."); return; }
@@ -780,7 +784,7 @@ tp-yt-iron-overlay-backdrop,
             if (isAdPlaying()) {
                 videoElement.muted = true; videoElement.volume = 0;
 
-                if (pageJustLoaded == false) {
+                if (!isPageLoading()) {
                     videoElement.playbackRate = SETTINGS.adPlaybackRate;
 
                     if (SETTINGS.hideAd) {
@@ -826,9 +830,7 @@ tp-yt-iron-overlay-backdrop,
         if (window.location.href === currentUrl || isHandlingChange) return;
         log("info", "________________________");
         isHandlingChange = true;
-
-        pageJustLoaded = true;
-        setTimeout(function() { pageJustLoaded = false; }, 5000);
+        lastPageLoadTime = Date.now();
 
         // reset all variables and intervals (and set currentUrl) //
         resetEverything(true);
