@@ -1,4 +1,4 @@
-## v2.1.1
+## v2.1.1 - v2.1.2
    - For 5 seconds on the first AD will only be muted due to YouTube video player being deleted if its hidden or its playback rate is higher than 1
 
 ## v2.1.0:
