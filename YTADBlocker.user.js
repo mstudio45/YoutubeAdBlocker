@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube AdBlocker
 // @namespace    http://tampermonkey.net/
-// @version      2.1.0
+// @version      2.1.1
 // @description  YouTube AdBlocker made by mstudio45 that was inspired by TheRealJoelmatic's Remove Adblock Thing
 // @author       mstudio45
 // @match        https://www.youtube.com/*
@@ -71,6 +71,8 @@
 
     // Static Variables //
     const qualityList = ["Auto", "144p", "240p", "360p", "480p", "720p", "1080p", "1440p", "2160p"];
+
+    let pageJustLoaded = true;
 
     // Update Variables //
     let hasUpdated = false;
@@ -777,11 +779,14 @@ tp-yt-iron-overlay-backdrop,
 
             if (isAdPlaying()) {
                 videoElement.muted = true; videoElement.volume = 0;
-                videoElement.playbackRate = SETTINGS.adPlaybackRate;
 
-                if (SETTINGS.hideAd) {
-                    videoElement.style.display = "none";
-                    if (videoElement.parentElement) videoElement.parentElement.style.display = "none";
+                if (pageJustLoaded == false) {
+                    videoElement.playbackRate = SETTINGS.adPlaybackRate;
+
+                    if (SETTINGS.hideAd) {
+                        videoElement.style.display = "none";
+                        if (videoElement.parentElement) videoElement.parentElement.style.display = "none";
+                    }
                 }
             } else {
                 if (videoElement.muted == true) { videoElement.muted = false; videoElement.volume = 1; }
@@ -821,6 +826,9 @@ tp-yt-iron-overlay-backdrop,
         if (window.location.href === currentUrl || isHandlingChange) return;
         log("info", "________________________");
         isHandlingChange = true;
+
+        pageJustLoaded = true;
+        setTimeout(function() { pageJustLoaded = false; }, 5000);
 
         // reset all variables and intervals (and set currentUrl) //
         resetEverything(true);
